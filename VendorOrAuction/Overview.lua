@@ -165,17 +165,17 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
         if count ~= nil then tooltip:AddDoubleLine("В сумках", tostring(count), 1, 1, 1, 1, 1, 1) end
         tooltip:AddLine(" ")
         if vendor and vendor > 0 then
-            tooltip:AddDoubleLine("Торговец · за штуку", ns.money(vendor), 1, 1, 1, 1, 1, 1)
-            if count and count > 0 then tooltip:AddDoubleLine("Торговец · за всё", ns.money(vendor * count), 1, 1, 1, 1, 1, 1) end
+            tooltip:AddDoubleLine("Торговец - за штуку", ns.money(vendor), 1, 1, 1, 1, 1, 1)
+            if count and count > 0 then tooltip:AddDoubleLine("Торговец - за всё", ns.money(vendor * count), 1, 1, 1, 1, 1, 1) end
         else
             tooltip:AddDoubleLine("Торговец", "Нет цены", 1, 1, 1, 1, 0.7, 0.3)
         end
         if bound then
             tooltip:AddDoubleLine("Аукцион", "Персональный предмет", 1, 1, 1, 1, 0.7, 0.3)
         elseif auction then
-            tooltip:AddDoubleLine("Аукцион · за штуку", ns.money(auction), 1, 1, 1, 1, 1, 1)
-            if tradable and tradable > 0 then tooltip:AddDoubleLine("Аукцион · за всё (" .. tradable .. ")", ns.money(auction * tradable), 1, 1, 1, 1, 1, 1) end
-            tooltip:AddLine(source .. " · до комиссии", 0.65, 0.65, 0.65)
+            tooltip:AddDoubleLine("Аукцион - за штуку", ns.money(auction), 1, 1, 1, 1, 1, 1)
+            if tradable and tradable > 0 then tooltip:AddDoubleLine("Аукцион - за всё (" .. tradable .. ")", ns.money(auction * tradable), 1, 1, 1, 1, 1, 1) end
+            tooltip:AddLine(source .. " - до комиссии", 0.65, 0.65, 0.65)
         else
             tooltip:AddDoubleLine("Аукцион", "Нет данных TSM", 1, 1, 1, 1, 0.7, 0.3)
         end

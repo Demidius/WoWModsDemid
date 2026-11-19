@@ -67,7 +67,7 @@ function ns.itemCategory(link)
         icon = "INV_Sword_04"
         local slot = equipLoc and _G[equipLoc]
         if type(slot) ~= "string" or slot == "" then slot = nil end
-        label = slot and subType and (slot .. " · " .. subType) or subType or itemType or "Экипировка"
+        label = slot and subType and (slot .. " - " .. subType) or subType or itemType or "Экипировка"
     elseif classID == 19 then
         icon, label = "INV_Misc_Wrench_01", subType or "Инструмент"
     elseif classID == 7 or classID == 5 then
