@@ -150,11 +150,13 @@ events:SetScript("OnEvent", function() if frame and frame:IsShown() then redraw(
 local function compactNativeLines(tooltip)
     local name = tooltip:GetName()
     if not name or not tooltip.NumLines or not tooltip.ClearLines then return end
-    local lines, removed = {}, false
+    local lines, removed, itemLevel = {}, false, nil
     for i = 1, tooltip:NumLines() do
         local left, right = _G[name .. "TextLeft" .. i], _G[name .. "TextRight" .. i]
         local text = left and left:GetText()
-        local skip = type(text) == "string" and (text:match("^Цена продажи:") or text == "Используется для ремесел" or text == "Используется для ремёсел" or text:match("^Sell Price:") or text == "Crafting Reagent")
+        local level = type(text) == "string" and (text:match("^Уровень предмета:%s*(%d+)") or text:match("^Item Level%s*(%d+)"))
+        if level then itemLevel = level end
+        local skip = level or type(text) == "string" and (text:match("^Цена продажи:") or text == "Используется для ремесел" or text == "Используется для ремёсел" or text:match("^Sell Price:") or text == "Crafting Reagent")
         if skip then
             removed = true
         elseif text and text ~= "" then
@@ -166,6 +168,9 @@ local function compactNativeLines(tooltip)
         end
     end
     if not removed then return end
+    if itemLevel and lines[1] and (not lines[1][2] or lines[1][2] == "") then
+        lines[1][2], lines[1][6], lines[1][7], lines[1][8] = "Lv. " .. itemLevel, 1, 0.82, 0
+    end
     tooltip:ClearLines()
     for _, line in ipairs(lines) do
         if line[2] and line[2] ~= "" then
