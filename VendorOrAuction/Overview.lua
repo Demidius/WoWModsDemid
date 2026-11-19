@@ -146,21 +146,134 @@ events:RegisterEvent("QUEST_LOG_UPDATE")
 events:RegisterEvent("QUEST_TURNED_IN")
 events:SetScript("OnEvent", function() if frame and frame:IsShown() then redraw() end end)
 
+-- Keep item descriptions and stats, but remove duplicate native vendor and reagent labels.
+local function compactNativeLines(tooltip, link)
+    local name = tooltip:GetName()
+    if not name or not tooltip.NumLines or not tooltip.ClearLines then return end
+    local lines, removed, itemLevel = {}, false, nil
+    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+    local requiredLevel, equipSlot
+    if getInfo then
+        local _, _, _, baseLevel, required, _, _, _, equipLoc = getInfo(link)
+        if type(baseLevel) == "number" and baseLevel > 0 then itemLevel = baseLevel end
+        if type(required) == "number" and required > 0 then requiredLevel = required end
+        if equipLoc and equipLoc ~= "" and type(_G[equipLoc]) == "string" then equipSlot = _G[equipLoc] end
+    end
+    local inFishingBlock = false
+    for i = 1, tooltip:NumLines() do
+        local left, right = _G[name .. "TextLeft" .. i], _G[name .. "TextRight" .. i]
+        local text = left and left:GetText()
+        local level = type(text) == "string" and (text:match("^Уровень предмета:%s*(%d+)") or text:match("^Item Level%s*(%d+)"))
+        if level then itemLevel = level end
+        if text == "OneCast" then inFishingBlock = true end
+        local requiresLevel = requiredLevel and type(text) == "string" and (text:match("^Требуется%s+%d+%-й%s+уровень") or text:match("^Requires Level%s+%d+"))
+        local skip = level or requiresLevel or inFishingBlock or type(text) == "string" and (text:match("^Цена продажи:") or text == "Используется для ремесел" or text == "Используется для ремёсел" or text:match("^Sell Price:") or text == "Crafting Reagent")
+        if skip then
+            removed = true
+        elseif text and text ~= "" then
+            local r, g, b = left:GetTextColor()
+            local rightText = right and right:GetText()
+            if equipSlot and text == equipSlot then
+                if rightText and rightText ~= "" then text = " " else text = nil end
+                removed = true
+            end
+            local rr, rg, rb = 1, 1, 1
+            if rightText and rightText ~= "" then rr, rg, rb = right:GetTextColor() end
+            if text then lines[#lines + 1] = {text, rightText, r, g, b, rr, rg, rb} end
+        end
+    end
+    if not removed then return end
+    if (itemLevel or requiredLevel) and lines[1] and (not lines[1][2] or lines[1][2] == "") then
+        lines[1][2], lines[1][6], lines[1][7], lines[1][8] = "Lv. " .. (itemLevel or "-") .. " / " .. (requiredLevel or "-"), 1, 0.82, 0
+    end
+    tooltip:ClearLines()
+    for _, line in ipairs(lines) do
+        if line[2] and line[2] ~= "" then
+            tooltip:AddDoubleLine(line[1], line[2], line[3], line[4], line[5], line[6], line[7], line[8])
+        else
+            tooltip:AddLine(line[1], line[3], line[4], line[5], true)
+        end
+    end
+end
+-- The standard tooltip has two columns; overlay two independently aligned value columns.
+local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
+    if not tooltip.voaPriceTable then
+        local tableState = {rows = {}}
+        tooltip.voaPriceTable = tableState
+        tooltip:HookScript("OnTooltipCleared", function()
+            for _, row in ipairs(tableState.rows) do
+                if row.anchor and row.alpha then row.anchor:SetAlpha(row.alpha) end
+                if row.unit then row.unit:Hide() end
+                if row.total then row.total:Hide() end
+            end
+        end)
+    end
+    local tableState = tooltip.voaPriceTable
+    local rows = {
+        {"Цена", "За шт.", "За всё", true},
+        {"Торговец", vendor and vendor > 0 and ns.money(vendor) or "-", vendor and vendor > 0 and count and count > 0 and ns.money(vendor * count) or "-"},
+        {"Аукцион", not bound and auction and ns.money(auction) or "-", not bound and auction and tradable and tradable > 0 and ns.money(auction * tradable) or "-"},
+    }
+    local maxTotalWidth = 0
+    for i, data in ipairs(rows) do
+        -- Reserve native tooltip width and line height; the native right text is hidden.
+        tooltip:AddDoubleLine(data[1], data[2] .. "    " .. data[3], 1, 1, 1, 1, 1, 1)
+        local anchor = _G[tooltip:GetName() .. "TextRight" .. tooltip:NumLines()]
+        if not anchor then return end
+        local row = tableState.rows[i]
+        if not row then
+            row = {unit = tooltip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), total = tooltip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")}
+            tableState.rows[i] = row
+        end
+        row.anchor, row.alpha = anchor, anchor:GetAlpha()
+        anchor:SetAlpha(0)
+        local font, size, flags = anchor:GetFont()
+        if font then row.unit:SetFont(font, size, flags) row.total:SetFont(font, size, flags) end
+        local tint = data[4] and 0.65 or 1
+        row.unit:SetTextColor(tint, tint, tint)
+        row.total:SetTextColor(tint, tint, tint)
+        row.unit:SetText(data[2])
+        row.total:SetText(data[3])
+        row.unit:Show()
+        row.total:Show()
+        maxTotalWidth = math.max(maxTotalWidth, row.total:GetStringWidth() or 0)
+    end
+    for _, row in ipairs(tableState.rows) do
+        row.unit:ClearAllPoints()
+        row.unit:SetPoint("RIGHT", row.anchor, "RIGHT", -(maxTotalWidth + 12), 0)
+        row.total:ClearAllPoints()
+        row.total:SetPoint("RIGHT", row.anchor, "RIGHT", 0, 0)
+    end
+end
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
-        if tooltip ~= GameTooltip then return end
+        if tooltip ~= GameTooltip or IsShiftKeyDown() then return end
         local _, link = tooltip:GetItem()
-        if not link or not VendorOrAuctionDB then return end
+        if not link then return end
+        local ok, vendor, auction, source = pcall(ns.tooltipPrices, link)
+        if not ok then return end
+        local categoryOk, category = pcall(ns.itemCategory, link)
+        local countOk, count = pcall(ns.bagQuantity, link)
+        if not countOk then count = nil end
         local owner = tooltip:GetOwner()
-        local details = owner and owner.BGR
-        local context = details and {bound = details.isBound, quest = details.isQuestItem} or nil
-        local ok, result = pcall(ns.evaluate, link, context)
-        if not ok or not result or result.loading then return end
-        tooltip:AddLine(" ")
-        tooltip:AddLine("Vendor or Auction: " .. ns.labels[result.kind], 1, .82, 0)
-        tooltip:AddLine(result.reason, 1, 1, 1, true)
-        if result.profit then tooltip:AddLine("Выгода за штуку: " .. ns.money(result.profit) .. " (без залога)", 1, 1, 1) end
-        if result.totalProfit then tooltip:AddLine("Выгода за все в сумках (" .. result.bagCount .. " шт.): " .. ns.money(result.totalProfit), 1, 1, 1) end
-        if result.rate then tooltip:AddLine("Скорость продаж TSM: " .. string.format("%.3f", result.rate), 1, 1, 1) end
+        local itemDetails = owner and owner.BGR
+        local bound = itemDetails and itemDetails.isBound
+        local tradableOk, tradable = pcall(ns.auctionBagQuantity, link)
+        if not tradableOk then tradable = nil end
+        pcall(compactNativeLines, tooltip, link)
+        if categoryOk and category then
+            local amount = count and count > 0 and ("  x" .. count) or ""
+            tooltip:AddLine(category .. amount, 0.8, 0.8, 0.8)
+        end
+        addPriceTable(tooltip, vendor, auction, count, tradable, bound)
     end)
 end
+
+local modifierEvents = CreateFrame("Frame")
+modifierEvents:RegisterEvent("MODIFIER_STATE_CHANGED")
+modifierEvents:SetScript("OnEvent", function(_, _, key)
+    if key ~= "LSHIFT" and key ~= "RSHIFT" then return end
+    if GameTooltip and GameTooltip:IsShown() and GameTooltip.RefreshData then
+        pcall(GameTooltip.RefreshData, GameTooltip)
+    end
+end)

@@ -212,6 +212,11 @@ events:SetScript("OnEvent", function(_, event, arg)
         for key, default in pairs(defaults) do
             if type(VendorOrAuctionDB[key]) ~= "number" then VendorOrAuctionDB[key] = default end
         end
+        -- The inventory summary belongs to Syndicator; keep it available on Shift.
+        if SYNDICATOR_CONFIG and not VendorOrAuctionDB.syndicatorShiftConfigured then
+            SYNDICATOR_CONFIG.show_tooltips_on_shift = true
+            VendorOrAuctionDB.syndicatorShiftConfigured = true
+        end
         registerBaganator()
     elseif event == "PLAYER_LOGIN" then
         if VendorOrAuctionLogic.refreshQuests then pcall(VendorOrAuctionLogic.refreshQuests) end

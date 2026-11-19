@@ -16,30 +16,72 @@ function ns.playerBags()
     return bags
 end
 
-local bagCounts
+local bagCounts, allBagCounts
 
 function ns.invalidateBagCounts()
-    bagCounts = nil
+    bagCounts, allBagCounts = nil, nil
 end
 
 local function countInBags(itemID)
     if not bagCounts then
-        local counts = {}
+        local counts, allCounts = {}, {}
         if C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo then
             for _, bag in ipairs(ns.playerBags()) do
                 local slots = C_Container.GetContainerNumSlots(bag) or 0
                 for slot = 1, slots do
                     local info = C_Container.GetContainerItemInfo(bag, slot)
                     local id = info and (info.itemID or (C_Container.GetContainerItemID and C_Container.GetContainerItemID(bag, slot)))
-                    if id and not info.isBound then
-                        counts[id] = (counts[id] or 0) + (info.stackCount or 1)
+                    if id then
+                        local quantity = info.stackCount or 1
+                        allCounts[id] = (allCounts[id] or 0) + quantity
+                        if not info.isBound then counts[id] = (counts[id] or 0) + quantity end
                     end
                 end
             end
         end
-        bagCounts = counts
+        bagCounts, allBagCounts = counts, allCounts
     end
     return bagCounts[itemID] or 0
+end
+function ns.bagQuantity(link)
+    if type(link) ~= "string" then return nil end
+    local id = tonumber(link:match("item:(%d+)"))
+    if not id then return nil end
+    countInBags(id)
+    return allBagCounts and (allBagCounts[id] or 0) or 0
+end
+
+function ns.auctionBagQuantity(link)
+    if type(link) ~= "string" then return nil end
+    local id = tonumber(link:match("item:(%d+)"))
+    return id and countInBags(id) or nil
+end
+
+function ns.itemCategory(link)
+    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+    if not getInfo then return nil end
+    local name, _, _, _, _, itemType, subType, _, equipLoc, _, _, classID, subClassID = getInfo(link)
+    if not name then return nil end
+    local label, icon
+    if classID == 2 or classID == 4 then
+        icon = "INV_Sword_04"
+        local slot = equipLoc and _G[equipLoc]
+        if type(slot) ~= "string" or slot == "" then slot = nil end
+        label = slot and subType and (slot .. " - " .. subType) or subType or itemType or "Экипировка"
+    elseif classID == 19 then
+        icon, label = "INV_Misc_Wrench_01", subType or "Инструмент"
+    elseif classID == 7 or classID == 5 then
+        icon, label = "INV_Misc_Herb_07", "Ремесленный материал"
+    elseif classID == 0 and subClassID == 5 then
+        icon, label = "INV_Misc_Food_15", "Еда и напитки"
+    elseif classID == 0 then
+        icon, label = "INV_Potion_54", subType or itemType or "Расходуемое"
+    elseif classID == 12 then
+        icon, label = "INV_Misc_Note_01", "Предмет задания"
+    else
+        icon, label = "INV_Misc_Bag_10", subType or itemType or "Предмет"
+    end
+    return "|TInterface\\Icons\\" .. icon .. ":14:14:0:0|t " .. label
 end
 local function price(source, item)
     if not TSM_API or type(TSM_API.GetCustomPriceValue) ~= "function" then return nil end
@@ -47,6 +89,27 @@ local function price(source, item)
     if ok and type(result) == "number" and result >= 0 then return result end
 end
 
+-- Prices for the compact tooltip are independent of recommendations and bag state.
+function ns.tooltipPrices(link)
+    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+    if not getInfo or not link then return end
+    local _, _, _, _, _, _, _, _, _, _, vendor = getInfo(link)
+    local item
+    if TSM_API and type(TSM_API.ToItemString) == "function" then
+        local ok, converted = pcall(TSM_API.ToItemString, link)
+        if ok and type(converted) == "string" then item = converted end
+    end
+    if not item then
+        local id = link:match("item:(%d+)")
+        if id then item = "i:" .. id end
+    end
+    if not item then return vendor end
+    local auction = price("DBMinBuyout", item)
+    if auction and auction > 0 then return vendor, auction, "Мин. выкуп" end
+    auction = price("DBRegionSaleAvg", item)
+    if auction and auction > 0 then return vendor, auction, "Средняя продажа" end
+    return vendor
+end
 function ns.evaluate(link, context)
     context = context or {}
     local result = {kind = "check", reason = "Недостаточно данных о предмете"}
@@ -127,6 +190,20 @@ function ns.money(value)
     if not value then return "нет данных" end
     local sign = value < 0 and "−" or ""
     value = math.floor(math.abs(value) + 0.5)
-    if GetCoinTextureString then return sign .. GetCoinTextureString(value) end
-    return sign .. value .. " мед."
+    if C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString then
+        local ok, formatted = pcall(C_CurrencyInfo.GetCoinTextureString, value, 12)
+        if ok and formatted and formatted ~= "" then return sign .. formatted end
+    end
+    if GetCoinTextureString then
+        local ok, formatted = pcall(GetCoinTextureString, value, 12)
+        if ok and formatted and formatted ~= "" then return sign .. formatted end
+    end
+    local gold = math.floor(value / 10000)
+    local silver = math.floor(value / 100) % 100
+    local copper = value % 100
+    local parts = {}
+    if gold > 0 then parts[#parts + 1] = gold .. "|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:0:0|t" end
+    if silver > 0 then parts[#parts + 1] = silver .. "|TInterface\\MoneyFrame\\UI-SilverIcon:12:12:0:0|t" end
+    if copper > 0 or #parts == 0 then parts[#parts + 1] = copper .. "|TInterface\\MoneyFrame\\UI-CopperIcon:12:12:0:0|t" end
+    return sign .. table.concat(parts, " ")
 end
