@@ -148,19 +148,27 @@ events:SetScript("OnEvent", function() if frame and frame:IsShown() then redraw(
 
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
-        if tooltip ~= GameTooltip then return end
+        if tooltip ~= GameTooltip or IsShiftKeyDown() then return end
         local _, link = tooltip:GetItem()
-        if not link or not VendorOrAuctionDB then return end
-        local owner = tooltip:GetOwner()
-        local details = owner and owner.BGR
-        local context = details and {bound = details.isBound, quest = details.isQuestItem} or nil
-        local ok, result = pcall(ns.evaluate, link, context)
-        if not ok or not result or result.loading then return end
-        tooltip:AddLine(" ")
-        tooltip:AddLine("Vendor or Auction: " .. ns.labels[result.kind], 1, .82, 0)
-        tooltip:AddLine(result.reason, 1, 1, 1, true)
-        if result.profit then tooltip:AddLine("Выгода за штуку: " .. ns.money(result.profit) .. " (без залога)", 1, 1, 1) end
-        if result.totalProfit then tooltip:AddLine("Выгода за все в сумках (" .. result.bagCount .. " шт.): " .. ns.money(result.totalProfit), 1, 1, 1) end
-        if result.rate then tooltip:AddLine("Скорость продаж TSM: " .. string.format("%.3f", result.rate), 1, 1, 1) end
+        if not link then return end
+        local ok, vendor, auction, source = pcall(ns.tooltipPrices, link)
+        if not ok then return end
+        if vendor and vendor > 0 then
+            tooltip:AddDoubleLine("Торговец (за шт.)", ns.money(vendor), 1, 1, 1, 1, 1, 1)
+        end
+        if auction then
+            tooltip:AddDoubleLine(source .. " (за шт.)", ns.money(auction), 1, 1, 1, 1, 1, 1)
+        else
+            tooltip:AddDoubleLine("Аукцион", "Нет данных TSM", 1, 1, 1, 1, 0.7, 0.3)
+        end
     end)
 end
+
+local modifierEvents = CreateFrame("Frame")
+modifierEvents:RegisterEvent("MODIFIER_STATE_CHANGED")
+modifierEvents:SetScript("OnEvent", function(_, _, key)
+    if key ~= "LSHIFT" and key ~= "RSHIFT" then return end
+    if GameTooltip and GameTooltip:IsShown() and GameTooltip.RefreshData then
+        pcall(GameTooltip.RefreshData, GameTooltip)
+    end
+end)

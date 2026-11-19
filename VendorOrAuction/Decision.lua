@@ -47,6 +47,27 @@ local function price(source, item)
     if ok and type(result) == "number" and result >= 0 then return result end
 end
 
+-- Prices for the compact tooltip are independent of recommendations and bag state.
+function ns.tooltipPrices(link)
+    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+    if not getInfo or not link then return end
+    local _, _, _, _, _, _, _, _, _, _, vendor = getInfo(link)
+    local item
+    if TSM_API and type(TSM_API.ToItemString) == "function" then
+        local ok, converted = pcall(TSM_API.ToItemString, link)
+        if ok and type(converted) == "string" then item = converted end
+    end
+    if not item then
+        local id = link:match("item:(%d+)")
+        if id then item = "i:" .. id end
+    end
+    if not item then return vendor end
+    local auction = price("DBMinBuyout", item)
+    if auction and auction > 0 then return vendor, auction, "Мин. выкуп" end
+    auction = price("DBRegionSaleAvg", item)
+    if auction and auction > 0 then return vendor, auction, "Средняя продажа" end
+    return vendor
+end
 function ns.evaluate(link, context)
     context = context or {}
     local result = {kind = "check", reason = "Недостаточно данных о предмете"}
@@ -127,6 +148,20 @@ function ns.money(value)
     if not value then return "нет данных" end
     local sign = value < 0 and "−" or ""
     value = math.floor(math.abs(value) + 0.5)
-    if GetCoinTextureString then return sign .. GetCoinTextureString(value) end
-    return sign .. value .. " мед."
+    if C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString then
+        local ok, formatted = pcall(C_CurrencyInfo.GetCoinTextureString, value, 12)
+        if ok and formatted and formatted ~= "" then return sign .. formatted end
+    end
+    if GetCoinTextureString then
+        local ok, formatted = pcall(GetCoinTextureString, value, 12)
+        if ok and formatted and formatted ~= "" then return sign .. formatted end
+    end
+    local gold = math.floor(value / 10000)
+    local silver = math.floor(value / 100) % 100
+    local copper = value % 100
+    local parts = {}
+    if gold > 0 then parts[#parts + 1] = gold .. "|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:0:0|t" end
+    if silver > 0 then parts[#parts + 1] = silver .. "|TInterface\\MoneyFrame\\UI-SilverIcon:12:12:0:0|t" end
+    if copper > 0 or #parts == 0 then parts[#parts + 1] = copper .. "|TInterface\\MoneyFrame\\UI-CopperIcon:12:12:0:0|t" end
+    return sign .. table.concat(parts, " ")
 end
