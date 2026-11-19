@@ -147,29 +147,44 @@ events:RegisterEvent("QUEST_TURNED_IN")
 events:SetScript("OnEvent", function() if frame and frame:IsShown() then redraw() end end)
 
 -- Keep item descriptions and stats, but remove duplicate native vendor and reagent labels.
-local function compactNativeLines(tooltip)
+local function compactNativeLines(tooltip, link)
     local name = tooltip:GetName()
     if not name or not tooltip.NumLines or not tooltip.ClearLines then return end
     local lines, removed, itemLevel = {}, false, nil
+    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+    local requiredLevel, equipSlot
+    if getInfo then
+        local _, _, _, _, required, _, _, _, equipLoc = getInfo(link)
+        if type(required) == "number" and required > 0 then requiredLevel = required end
+        if equipLoc and equipLoc ~= "" and type(_G[equipLoc]) == "string" then equipSlot = _G[equipLoc] end
+    end
+    local inFishingBlock = false
     for i = 1, tooltip:NumLines() do
         local left, right = _G[name .. "TextLeft" .. i], _G[name .. "TextRight" .. i]
         local text = left and left:GetText()
         local level = type(text) == "string" and (text:match("^Уровень предмета:%s*(%d+)") or text:match("^Item Level%s*(%d+)"))
         if level then itemLevel = level end
-        local skip = level or type(text) == "string" and (text:match("^Цена продажи:") or text == "Используется для ремесел" or text == "Используется для ремёсел" or text:match("^Sell Price:") or text == "Crafting Reagent")
+        if text == "OneCast" then inFishingBlock = true end
+        local requiresLevel = requiredLevel and type(text) == "string" and (text:match("^Требуется%s+%d+%-й%s+уровень") or text:match("^Requires Level%s+%d+"))
+        local skip = level or requiresLevel or inFishingBlock or type(text) == "string" and (text:match("^Цена продажи:") or text == "Используется для ремесел" or text == "Используется для ремёсел" or text:match("^Sell Price:") or text == "Crafting Reagent")
         if skip then
             removed = true
         elseif text and text ~= "" then
             local r, g, b = left:GetTextColor()
             local rightText = right and right:GetText()
+            if equipSlot and text == equipSlot then
+                if rightText and rightText ~= "" then text = " " else text = nil end
+                removed = true
+            end
             local rr, rg, rb = 1, 1, 1
             if rightText and rightText ~= "" then rr, rg, rb = right:GetTextColor() end
-            lines[#lines + 1] = {text, rightText, r, g, b, rr, rg, rb}
+            if text then lines[#lines + 1] = {text, rightText, r, g, b, rr, rg, rb} end
         end
     end
     if not removed then return end
-    if itemLevel and lines[1] and (not lines[1][2] or lines[1][2] == "") then
-        lines[1][2], lines[1][6], lines[1][7], lines[1][8] = "Lv. " .. itemLevel, 1, 0.82, 0
+    local displayLevel = requiredLevel or itemLevel
+    if displayLevel and lines[1] and (not lines[1][2] or lines[1][2] == "") then
+        lines[1][2], lines[1][6], lines[1][7], lines[1][8] = "Lv. " .. displayLevel, 1, 0.82, 0
     end
     tooltip:ClearLines()
     for _, line in ipairs(lines) do
@@ -195,7 +210,7 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
         local bound = itemDetails and itemDetails.isBound
         local tradableOk, tradable = pcall(ns.auctionBagQuantity, link)
         if not tradableOk then tradable = nil end
-        pcall(compactNativeLines, tooltip)
+        pcall(compactNativeLines, tooltip, link)
         if categoryOk and category then
             local amount = count and count > 0 and ("  x" .. count) or ""
             tooltip:AddLine(category .. amount, 0.8, 0.8, 0.8)
@@ -208,14 +223,14 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
             return ns.money(price)
         end
         if vendor and vendor > 0 then
-            tooltip:AddDoubleLine("Торговец", pair(vendor, count), 1, 1, 1, 1, 1, 1)
+            tooltip:AddDoubleLine(" ", "Торговец  " .. pair(vendor, count), 1, 1, 1, 1, 1, 1)
         else
             tooltip:AddDoubleLine("Торговец", "Нет цены", 1, 1, 1, 1, 0.7, 0.3)
         end
         if bound then
             tooltip:AddDoubleLine("Аукцион", "Персональный предмет", 1, 1, 1, 1, 0.7, 0.3)
         elseif auction then
-            tooltip:AddDoubleLine("Аукцион", pair(auction, tradable), 1, 1, 1, 1, 1, 1)
+            tooltip:AddDoubleLine(" ", "Аукцион  " .. pair(auction, tradable), 1, 1, 1, 1, 1, 1)
         else
             tooltip:AddDoubleLine("Аукцион", "Нет данных TSM", 1, 1, 1, 1, 0.7, 0.3)
         end

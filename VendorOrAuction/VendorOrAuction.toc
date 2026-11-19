@@ -2,8 +2,8 @@
 ## Title: My Vendor or Auction
 ## Notes: Marks bag items when selling to a vendor is preferable.
 ## Author: Codex
-## Version: 2.5.1
-## OptionalDeps: TradeSkillMaster, Baganator, HidingBar, Questie
+## Version: 2.5.2
+## OptionalDeps: TradeSkillMaster, Baganator, HidingBar, Questie, OneCast
 ## SavedVariables: VendorOrAuctionDB
 Decision.lua
 QuestItems.lua
