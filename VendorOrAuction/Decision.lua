@@ -16,30 +16,72 @@ function ns.playerBags()
     return bags
 end
 
-local bagCounts
+local bagCounts, allBagCounts
 
 function ns.invalidateBagCounts()
-    bagCounts = nil
+    bagCounts, allBagCounts = nil, nil
 end
 
 local function countInBags(itemID)
     if not bagCounts then
-        local counts = {}
+        local counts, allCounts = {}, {}
         if C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo then
             for _, bag in ipairs(ns.playerBags()) do
                 local slots = C_Container.GetContainerNumSlots(bag) or 0
                 for slot = 1, slots do
                     local info = C_Container.GetContainerItemInfo(bag, slot)
                     local id = info and (info.itemID or (C_Container.GetContainerItemID and C_Container.GetContainerItemID(bag, slot)))
-                    if id and not info.isBound then
-                        counts[id] = (counts[id] or 0) + (info.stackCount or 1)
+                    if id then
+                        local quantity = info.stackCount or 1
+                        allCounts[id] = (allCounts[id] or 0) + quantity
+                        if not info.isBound then counts[id] = (counts[id] or 0) + quantity end
                     end
                 end
             end
         end
-        bagCounts = counts
+        bagCounts, allBagCounts = counts, allCounts
     end
     return bagCounts[itemID] or 0
+end
+function ns.bagQuantity(link)
+    if type(link) ~= "string" then return nil end
+    local id = tonumber(link:match("item:(%d+)"))
+    if not id then return nil end
+    countInBags(id)
+    return allBagCounts and (allBagCounts[id] or 0) or 0
+end
+
+function ns.auctionBagQuantity(link)
+    if type(link) ~= "string" then return nil end
+    local id = tonumber(link:match("item:(%d+)"))
+    return id and countInBags(id) or nil
+end
+
+function ns.itemCategory(link)
+    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+    if not getInfo then return nil end
+    local name, _, _, _, _, itemType, subType, _, equipLoc, _, _, classID, subClassID = getInfo(link)
+    if not name then return nil end
+    local label, icon
+    if classID == 2 or classID == 4 then
+        icon = "INV_Sword_04"
+        local slot = equipLoc and _G[equipLoc]
+        if type(slot) ~= "string" or slot == "" then slot = nil end
+        label = slot and subType and (slot .. " · " .. subType) or subType or itemType or "Экипировка"
+    elseif classID == 19 then
+        icon, label = "INV_Misc_Wrench_01", subType or "Инструмент"
+    elseif classID == 7 or classID == 5 then
+        icon, label = "INV_Misc_Herb_07", "Ремесленный материал"
+    elseif classID == 0 and subClassID == 5 then
+        icon, label = "INV_Misc_Food_15", "Еда и напитки"
+    elseif classID == 0 then
+        icon, label = "INV_Potion_54", subType or itemType or "Расходуемое"
+    elseif classID == 12 then
+        icon, label = "INV_Misc_Note_01", "Предмет задания"
+    else
+        icon, label = "INV_Misc_Bag_10", subType or itemType or "Предмет"
+    end
+    return "|TInterface\\Icons\\" .. icon .. ":14:14:0:0|t " .. label
 end
 local function price(source, item)
     if not TSM_API or type(TSM_API.GetCustomPriceValue) ~= "function" then return nil end

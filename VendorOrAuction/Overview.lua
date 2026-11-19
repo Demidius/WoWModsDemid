@@ -153,11 +153,29 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
         if not link then return end
         local ok, vendor, auction, source = pcall(ns.tooltipPrices, link)
         if not ok then return end
+        local categoryOk, category = pcall(ns.itemCategory, link)
+        local countOk, count = pcall(ns.bagQuantity, link)
+        if not countOk then count = nil end
+        local owner = tooltip:GetOwner()
+        local itemDetails = owner and owner.BGR
+        local bound = itemDetails and itemDetails.isBound
+        local tradableOk, tradable = pcall(ns.auctionBagQuantity, link)
+        if not tradableOk then tradable = nil end
+        if categoryOk and category then tooltip:AddLine(category, 0.8, 0.8, 0.8) end
+        if count ~= nil then tooltip:AddDoubleLine("В сумках", tostring(count), 1, 1, 1, 1, 1, 1) end
+        tooltip:AddLine(" ")
         if vendor and vendor > 0 then
-            tooltip:AddDoubleLine("Торговец (за шт.)", ns.money(vendor), 1, 1, 1, 1, 1, 1)
+            tooltip:AddDoubleLine("Торговец · за штуку", ns.money(vendor), 1, 1, 1, 1, 1, 1)
+            if count and count > 0 then tooltip:AddDoubleLine("Торговец · за всё", ns.money(vendor * count), 1, 1, 1, 1, 1, 1) end
+        else
+            tooltip:AddDoubleLine("Торговец", "Нет цены", 1, 1, 1, 1, 0.7, 0.3)
         end
-        if auction then
-            tooltip:AddDoubleLine(source .. " (за шт.)", ns.money(auction), 1, 1, 1, 1, 1, 1)
+        if bound then
+            tooltip:AddDoubleLine("Аукцион", "Персональный предмет", 1, 1, 1, 1, 0.7, 0.3)
+        elseif auction then
+            tooltip:AddDoubleLine("Аукцион · за штуку", ns.money(auction), 1, 1, 1, 1, 1, 1)
+            if tradable and tradable > 0 then tooltip:AddDoubleLine("Аукцион · за всё (" .. tradable .. ")", ns.money(auction * tradable), 1, 1, 1, 1, 1, 1) end
+            tooltip:AddLine(source .. " · до комиссии", 0.65, 0.65, 0.65)
         else
             tooltip:AddDoubleLine("Аукцион", "Нет данных TSM", 1, 1, 1, 1, 0.7, 0.3)
         end
