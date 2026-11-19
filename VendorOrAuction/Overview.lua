@@ -195,6 +195,56 @@ local function compactNativeLines(tooltip, link)
         end
     end
 end
+-- The standard tooltip has two columns; overlay two independently aligned value columns.
+local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
+    if not tooltip.voaPriceTable then
+        local tableState = {rows = {}}
+        tooltip.voaPriceTable = tableState
+        tooltip:HookScript("OnTooltipCleared", function()
+            for _, row in ipairs(tableState.rows) do
+                if row.anchor and row.alpha then row.anchor:SetAlpha(row.alpha) end
+                if row.unit then row.unit:Hide() end
+                if row.total then row.total:Hide() end
+            end
+        end)
+    end
+    local tableState = tooltip.voaPriceTable
+    local rows = {
+        {"Цена", "За шт.", "За всё", true},
+        {"Торговец", vendor and vendor > 0 and ns.money(vendor) or "-", vendor and vendor > 0 and count and count > 0 and ns.money(vendor * count) or "-"},
+        {"Аукцион", not bound and auction and ns.money(auction) or "-", not bound and auction and tradable and tradable > 0 and ns.money(auction * tradable) or "-"},
+    }
+    local maxTotalWidth = 0
+    for i, data in ipairs(rows) do
+        -- Reserve native tooltip width and line height; the native right text is hidden.
+        tooltip:AddDoubleLine(data[1], data[2] .. "    " .. data[3], 1, 1, 1, 1, 1, 1)
+        local anchor = _G[tooltip:GetName() .. "TextRight" .. tooltip:NumLines()]
+        if not anchor then return end
+        local row = tableState.rows[i]
+        if not row then
+            row = {unit = tooltip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), total = tooltip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")}
+            tableState.rows[i] = row
+        end
+        row.anchor, row.alpha = anchor, anchor:GetAlpha()
+        anchor:SetAlpha(0)
+        local font, size, flags = anchor:GetFont()
+        if font then row.unit:SetFont(font, size, flags) row.total:SetFont(font, size, flags) end
+        local tint = data[4] and 0.65 or 1
+        row.unit:SetTextColor(tint, tint, tint)
+        row.total:SetTextColor(tint, tint, tint)
+        row.unit:SetText(data[2])
+        row.total:SetText(data[3])
+        row.unit:Show()
+        row.total:Show()
+        maxTotalWidth = math.max(maxTotalWidth, row.total:GetStringWidth() or 0)
+    end
+    for _, row in ipairs(tableState.rows) do
+        row.unit:ClearAllPoints()
+        row.unit:SetPoint("RIGHT", row.anchor, "RIGHT", -(maxTotalWidth + 12), 0)
+        row.total:ClearAllPoints()
+        row.total:SetPoint("RIGHT", row.anchor, "RIGHT", 0, 0)
+    end
+end
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
         if tooltip ~= GameTooltip or IsShiftKeyDown() then return end
@@ -215,24 +265,7 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
             local amount = count and count > 0 and ("  x" .. count) or ""
             tooltip:AddLine(category .. amount, 0.8, 0.8, 0.8)
         end
-        tooltip:AddLine(" ")
-        tooltip:AddDoubleLine("Цена", "За шт. / За всё", 0.7, 0.7, 0.7, 0.7, 0.7, 0.7)
-        local function pair(price, quantity)
-            local total = quantity and quantity > 0 and ns.money(price * quantity) or "-"
-            return ns.money(price) .. " / " .. total
-        end
-        if vendor and vendor > 0 then
-            tooltip:AddDoubleLine("Торговец", pair(vendor, count), 1, 1, 1, 1, 1, 1)
-        else
-            tooltip:AddDoubleLine("Торговец", "Нет цены", 1, 1, 1, 1, 0.7, 0.3)
-        end
-        if bound then
-            tooltip:AddDoubleLine("Аукцион", "Персональный предмет", 1, 1, 1, 1, 0.7, 0.3)
-        elseif auction then
-            tooltip:AddDoubleLine("Аукцион", pair(auction, tradable), 1, 1, 1, 1, 1, 1)
-        else
-            tooltip:AddDoubleLine("Аукцион", "Нет данных TSM", 1, 1, 1, 1, 0.7, 0.3)
-        end
+        addPriceTable(tooltip, vendor, auction, count, tradable, bound)
     end)
 end
 
