@@ -214,19 +214,23 @@ local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
         {"Торговец", vendor and vendor > 0 and ns.money(vendor) or "-", vendor and vendor > 0 and count and count > 0 and ns.money(vendor * count) or "-"},
         {"Аукцион", not bound and auction and ns.money(auction) or "-", not bound and auction and tradable and tradable > 0 and ns.money(auction * tradable) or "-"},
     }
+    local anchors = {}
+    for i, data in ipairs(rows) do
+        -- Always build a complete native table first, as a fallback if overlays fail.
+        tooltip:AddDoubleLine(data[1], data[2] .. "  /  " .. data[3], 1, 1, 1, 1, 1, 1)
+        anchors[i] = _G[tooltip:GetName() .. "TextRight" .. tooltip:NumLines()]
+    end
+    local ok = pcall(function()
     local maxTotalWidth = 0
     for i, data in ipairs(rows) do
-        -- Reserve native tooltip width and line height; the native right text is hidden.
-        tooltip:AddDoubleLine(data[1], data[2] .. "    " .. data[3], 1, 1, 1, 1, 1, 1)
-        local anchor = _G[tooltip:GetName() .. "TextRight" .. tooltip:NumLines()]
-        if not anchor then return end
+        local anchor = anchors[i]
+        if not anchor then error("Tooltip price anchor unavailable") end
         local row = tableState.rows[i]
         if not row then
             row = {unit = tooltip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), total = tooltip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")}
             tableState.rows[i] = row
         end
         row.anchor, row.alpha = anchor, anchor:GetAlpha()
-        anchor:SetAlpha(0)
         local font, size, flags = anchor:GetFont()
         if font then row.unit:SetFont(font, size, flags) row.total:SetFont(font, size, flags) end
         local tint = data[4] and 0.65 or 1
@@ -243,6 +247,15 @@ local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
         row.unit:SetPoint("RIGHT", row.anchor, "RIGHT", -(maxTotalWidth + 12), 0)
         row.total:ClearAllPoints()
         row.total:SetPoint("RIGHT", row.anchor, "RIGHT", 0, 0)
+    end
+    for _, row in ipairs(tableState.rows) do row.anchor:SetAlpha(0) end
+    end)
+    if not ok then
+        for _, row in ipairs(tableState.rows) do
+            if row.anchor and row.alpha then row.anchor:SetAlpha(row.alpha) end
+            if row.unit then row.unit:Hide() end
+            if row.total then row.total:Hide() end
+        end
     end
 end
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
