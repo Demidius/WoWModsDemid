@@ -154,7 +154,8 @@ local function compactNativeLines(tooltip, link)
     local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
     local requiredLevel, equipSlot
     if getInfo then
-        local _, _, _, _, required, _, _, _, equipLoc = getInfo(link)
+        local _, _, _, baseLevel, required, _, _, _, equipLoc = getInfo(link)
+        if type(baseLevel) == "number" and baseLevel > 0 then itemLevel = baseLevel end
         if type(required) == "number" and required > 0 then requiredLevel = required end
         if equipLoc and equipLoc ~= "" and type(_G[equipLoc]) == "string" then equipSlot = _G[equipLoc] end
     end
@@ -182,9 +183,8 @@ local function compactNativeLines(tooltip, link)
         end
     end
     if not removed then return end
-    local displayLevel = requiredLevel or itemLevel
-    if displayLevel and lines[1] and (not lines[1][2] or lines[1][2] == "") then
-        lines[1][2], lines[1][6], lines[1][7], lines[1][8] = "Lv. " .. displayLevel, 1, 0.82, 0
+    if (itemLevel or requiredLevel) and lines[1] and (not lines[1][2] or lines[1][2] == "") then
+        lines[1][2], lines[1][6], lines[1][7], lines[1][8] = "Lv. " .. (itemLevel or "-") .. " / " .. (requiredLevel or "-"), 1, 0.82, 0
     end
     tooltip:ClearLines()
     for _, line in ipairs(lines) do
@@ -216,21 +216,20 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
             tooltip:AddLine(category .. amount, 0.8, 0.8, 0.8)
         end
         tooltip:AddLine(" ")
+        tooltip:AddDoubleLine("Цена", "За шт. / За всё", 0.7, 0.7, 0.7, 0.7, 0.7, 0.7)
         local function pair(price, quantity)
-            if quantity and quantity > 1 then
-                return ns.money(price) .. " / " .. ns.money(price * quantity)
-            end
-            return ns.money(price)
+            local total = quantity and quantity > 0 and ns.money(price * quantity) or "-"
+            return ns.money(price) .. " / " .. total
         end
         if vendor and vendor > 0 then
-            tooltip:AddDoubleLine(" ", "Торговец  " .. pair(vendor, count), 1, 1, 1, 1, 1, 1)
+            tooltip:AddDoubleLine("Торговец", pair(vendor, count), 1, 1, 1, 1, 1, 1)
         else
             tooltip:AddDoubleLine("Торговец", "Нет цены", 1, 1, 1, 1, 0.7, 0.3)
         end
         if bound then
             tooltip:AddDoubleLine("Аукцион", "Персональный предмет", 1, 1, 1, 1, 0.7, 0.3)
         elseif auction then
-            tooltip:AddDoubleLine(" ", "Аукцион  " .. pair(auction, tradable), 1, 1, 1, 1, 1, 1)
+            tooltip:AddDoubleLine("Аукцион", pair(auction, tradable), 1, 1, 1, 1, 1, 1)
         else
             tooltip:AddDoubleLine("Аукцион", "Нет данных TSM", 1, 1, 1, 1, 0.7, 0.3)
         end
