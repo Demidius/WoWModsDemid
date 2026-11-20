@@ -2,7 +2,7 @@ local ADDON = ...
 local events = CreateFrame("Frame")
 local buttons = setmetatable({}, {__mode = "k"})
 local pending, panel
-local defaults = {saleRate = 0.3, minProfit = 100, profitPercent = 50, auctionCut = 5, iconSize = 18}
+local defaults = {saleRate = 0.3, minProfit = 100, auctionCut = 5, iconSize = 18}
 
 local function sizeLabel(label)
     local font = label:GetFont()
@@ -16,6 +16,9 @@ local function registerBaganator()
     Baganator.API.RegisterCornerWidget("Vendor or Auction: Рекомендация", "vendor-or-auction-sell",
         function(label, details)
             if not details or not details.itemLink then return false end
+            -- Prices and quantities are calculated for the current character's bags.
+            local located, inBags = pcall(VendorOrAuctionLogic.isPlayerBagLocation, details.itemLocation)
+            if not located or not inBags then return false end
             local result = VendorOrAuctionLogic.safe(details.itemLink, {bound = details.isBound, quest = details.isQuestItem})
             if result.loading then return nil end
             local icon = VendorOrAuctionLogic.icons[result.kind]
@@ -83,6 +86,9 @@ local function refresh()
         for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do pcall(updateFrame, frame) end
     end
     for button in pairs(buttons) do pcall(updateButton, button) end
+    if Baganator and Baganator.API and Baganator.API.RequestItemButtonsRefresh then
+        pcall(Baganator.API.RequestItemButtonsRefresh)
+    end
 end
 local function schedule()
     if pending then return end
@@ -91,9 +97,6 @@ local function schedule()
 end
 local function refreshAll()
     schedule()
-    if Baganator and Baganator.API and Baganator.API.RequestItemButtonsRefresh then
-        pcall(Baganator.API.RequestItemButtonsRefresh)
-    end
 end
 local function hookFrame(frame)
     if frame and type(frame.UpdateItems) == "function" then
@@ -121,13 +124,12 @@ local function showSettings()
         end
         heading("Прибыль и комиссия", -42)
         heading("Медленная продажа", -150)
-        heading("Отображение", -258)
+        heading("Отображение", -218)
         local fields = {
             {"minProfit", "Мин. общая выгода, серебро", 0, 100000, 100, -68},
             {"auctionCut", "Комиссия аукциона, %", 0, 100, 1, -108},
             {"saleRate", "Скорость продаж ниже (0–1)", 0, 1, 1, -176},
-            {"profitPercent", "Выгода ниже цены торговцу, %", 0, 10000, 1, -216},
-            {"iconSize", "Размер значков (8–32)", 8, 32, 1, -284},
+            {"iconSize", "Размер значков (8–32)", 8, 32, 1, -244},
         }
         local boxes = {}
         for i, field in ipairs(fields) do
@@ -142,10 +144,10 @@ local function showSettings()
             boxes[i] = box
         end
         local explanation = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        explanation:SetPoint("TOPLEFT", 25, -326)
+        explanation:SetPoint("TOPLEFT", 25, -286)
         explanation:SetPoint("RIGHT", -25, 0)
         explanation:SetJustifyH("LEFT")
-        explanation:SetText("При низкой скорости продаж учитывается также процент выгоды. Залог не включён.")
+        explanation:SetText("При скорости ниже порога советуем торговца. Красная цена — низкая скорость продажи. Залог не включён.")
         local status = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         status:SetPoint("TOPLEFT", 25, -360)
         status:SetPoint("RIGHT", -25, 0)
@@ -171,7 +173,7 @@ local function showSettings()
         end)
         panel:SetScript("OnShow", function()
             for i, field in ipairs(fields) do boxes[i]:SetText(tostring(VendorOrAuctionDB[field[1]] / field[5])) end
-            status:SetText(TSM_API and "TSM обнаружен. Цена: DBMinBuyout, затем DBMarket." or "TSM не обнаружен. Проверьте, включён ли аддон.")
+            status:SetText(TSM_API and "TSM обнаружен. Цена: минимум выкупа, затем средняя региональная." or "TSM не обнаружен. Проверьте, включён ли аддон.")
         end)
     end
     panel:Show()
@@ -227,7 +229,7 @@ events:SetScript("OnEvent", function(_, event, arg)
         end
         if not TSM_API then print("|cffffcc00Vendor or Auction:|r TSM не найден. Проверьте, включён ли он.") end
         schedule()
-    elseif event == "BAG_UPDATE_DELAYED" then
+    elseif event == "BAG_UPDATE_DELAYED" or event == "GET_ITEM_INFO_RECEIVED" then
         VendorOrAuctionLogic.invalidateBagCounts()
         refreshAll()
     elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_TURNED_IN" then

@@ -182,10 +182,11 @@ local function compactNativeLines(tooltip, link)
             if text then lines[#lines + 1] = {text, rightText, r, g, b, rr, rg, rb} end
         end
     end
-    if not removed then return end
     if (itemLevel or requiredLevel) and lines[1] and (not lines[1][2] or lines[1][2] == "") then
         lines[1][2], lines[1][6], lines[1][7], lines[1][8] = "Lv. " .. (itemLevel or "-") .. " / " .. (requiredLevel or "-"), 1, 0.82, 0
+        removed = true
     end
+    if not removed then return end
     tooltip:ClearLines()
     for _, line in ipairs(lines) do
         if line[2] and line[2] ~= "" then
@@ -196,7 +197,7 @@ local function compactNativeLines(tooltip, link)
     end
 end
 -- The standard tooltip has two columns; overlay two independently aligned value columns.
-local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
+local function addPriceTable(tooltip, vendor, auction, count, tradable, bound, slowSale)
     if not tooltip.voaPriceTable then
         local tableState = {rows = {}}
         tooltip.voaPriceTable = tableState
@@ -214,29 +215,39 @@ local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
         {"Торговец", vendor and vendor > 0 and ns.money(vendor) or "-", vendor and vendor > 0 and count and count > 0 and ns.money(vendor * count) or "-"},
         {"Аукцион", not bound and auction and ns.money(auction) or "-", not bound and auction and tradable and tradable > 0 and ns.money(auction * tradable) or "-"},
     }
+    local anchors = {}
+    for i, data in ipairs(rows) do
+        -- Always build a complete native table first, as a fallback if overlays fail.
+        local values = data[2] .. "  /  " .. data[3]
+        if i == 3 and slowSale and auction and not bound then values = "|cffff5555" .. values .. "|r" end
+        tooltip:AddDoubleLine(data[1], values, 1, 1, 1, 1, 1, 1)
+        anchors[i] = _G[tooltip:GetName() .. "TextRight" .. tooltip:NumLines()]
+    end
+    local ok = pcall(function()
     local maxTotalWidth = 0
     for i, data in ipairs(rows) do
-        -- Reserve native tooltip width and line height; the native right text is hidden.
-        tooltip:AddDoubleLine(data[1], data[2] .. "    " .. data[3], 1, 1, 1, 1, 1, 1)
-        local anchor = _G[tooltip:GetName() .. "TextRight" .. tooltip:NumLines()]
-        if not anchor then return end
+        local anchor = anchors[i]
+        if not anchor then error("Tooltip price anchor unavailable") end
         local row = tableState.rows[i]
         if not row then
             row = {unit = tooltip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"), total = tooltip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")}
             tableState.rows[i] = row
         end
         row.anchor, row.alpha = anchor, anchor:GetAlpha()
-        anchor:SetAlpha(0)
         local font, size, flags = anchor:GetFont()
         if font then row.unit:SetFont(font, size, flags) row.total:SetFont(font, size, flags) end
         local tint = data[4] and 0.65 or 1
-        row.unit:SetTextColor(tint, tint, tint)
-        row.total:SetTextColor(tint, tint, tint)
+        local red = i == 3 and slowSale and auction and not bound
+        row.unit:SetTextColor(red and 1 or tint, red and 0.33 or tint, red and 0.33 or tint)
+        row.total:SetTextColor(red and 1 or tint, red and 0.33 or tint, red and 0.33 or tint)
         row.unit:SetText(data[2])
         row.total:SetText(data[3])
         row.unit:Show()
         row.total:Show()
-        maxTotalWidth = math.max(maxTotalWidth, row.total:GetStringWidth() or 0)
+        local width = row.total:GetStringWidth()
+        if issecretvalue and issecretvalue(width) then error("Tooltip width unavailable") end
+        if type(width) ~= "number" then error("Tooltip width unavailable") end
+        maxTotalWidth = math.max(maxTotalWidth, width)
     end
     for _, row in ipairs(tableState.rows) do
         row.unit:ClearAllPoints()
@@ -244,7 +255,26 @@ local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
         row.total:ClearAllPoints()
         row.total:SetPoint("RIGHT", row.anchor, "RIGHT", 0, 0)
     end
+    for _, row in ipairs(tableState.rows) do row.anchor:SetAlpha(0) end
+    end)
+    if not ok then
+        for _, row in ipairs(tableState.rows) do
+            if row.anchor and row.alpha then row.anchor:SetAlpha(row.alpha) end
+            if row.unit then row.unit:Hide() end
+            if row.total then row.total:Hide() end
+        end
+    end
 end
+local function getOwnerBound(owner)
+    if not owner then return nil end
+    if owner.BGR then return owner.BGR.isBound end
+    if not (owner.GetBagID and owner.GetID and C_Container and C_Container.GetContainerItemInfo) then return nil end
+    local ok, info = pcall(function()
+        return C_Container.GetContainerItemInfo(owner:GetBagID(), owner:GetID())
+    end)
+    return ok and info and info.isBound or nil
+end
+
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
         if tooltip ~= GameTooltip or IsShiftKeyDown() then return end
@@ -256,8 +286,7 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
         local countOk, count = pcall(ns.bagQuantity, link)
         if not countOk then count = nil end
         local owner = tooltip:GetOwner()
-        local itemDetails = owner and owner.BGR
-        local bound = itemDetails and itemDetails.isBound
+        local bound = getOwnerBound(owner)
         local tradableOk, tradable = pcall(ns.auctionBagQuantity, link)
         if not tradableOk then tradable = nil end
         pcall(compactNativeLines, tooltip, link)
@@ -265,7 +294,10 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
             local amount = count and count > 0 and ("  x" .. count) or ""
             tooltip:AddLine(category .. amount, 0.8, 0.8, 0.8)
         end
-        addPriceTable(tooltip, vendor, auction, count, tradable, bound)
+        local rateOk, rate = pcall(ns.saleRate, link)
+        local threshold = VendorOrAuctionDB and VendorOrAuctionDB.saleRate
+        local slowSale = rateOk and type(rate) == "number" and type(threshold) == "number" and rate < threshold
+        addPriceTable(tooltip, vendor, auction, count, tradable, bound, slowSale)
     end)
 end
 
