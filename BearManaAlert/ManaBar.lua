@@ -57,12 +57,9 @@ local function updateRestrictedAlert(holder, threshold, enabled)
     if not curve then
         curve = C_CurveUtil.CreateCurve()
         curve:SetType(Enum.LuaCurveType.Step)
-        if threshold <= 0 then
-            curve:AddPoint(0, 0)
-        else
-            curve:AddPoint(0, 1)
-            curve:AddPoint(threshold / 100, 0)
-        end
+        -- Include the threshold itself, as for the sound and bar colour.
+        curve:AddPoint(0, 1)
+        if threshold < 100 then curve:AddPoint(threshold / 100 + 0.000001, 0) end
         alertCurves[threshold] = curve
     end
     holder:SetAlpha(UnitPowerPercent("player", 0, false, curve))
@@ -118,7 +115,7 @@ local function cost()
         end
     end
 end
-local function refresh(silent)
+local function refresh(silent, enteringCombat)
     if not db then return end
     local signPreview = signOptions and signOptions:IsShown()
     local preview = signPreview or (options and options:IsShown() and db.unlocked)
@@ -153,13 +150,23 @@ local function refresh(silent)
     thresholdAlert:SetPoint("BOTTOM", bar, "TOPLEFT", thresholdX, db.signOffset1)
     threshold2Alert:ClearAllPoints()
     threshold2Alert:SetPoint("BOTTOM", bar, "TOPLEFT", threshold2X, db.signOffset2)
+    -- Bear cost can still be displayed when only current mana is restricted.
+    if not (issecretvalue and issecretvalue(maximum)) and maximum and maximum > 0 then
+        local bear = cost()
+        if bear and bear <= maximum then
+            local bearX = (db.width - 2) * bear / maximum
+            marker:ClearAllPoints()
+            marker:SetPoint("TOP", bar, "TOPLEFT", bearX, 0)
+            marker:SetPoint("BOTTOM", bar, "BOTTOMLEFT", bearX, 0)
+            marker:Show()
+        else marker:Hide() end
+    else marker:Hide() end
     if issecretvalue and (issecretvalue(mana) or issecretvalue(maximum)) then
         bar:SetMinMaxValues(0, maximum)
         bar:SetValue(mana)
         local ok, applied = pcall(applyRestrictedColor)
         if not ok or not applied then bar:SetStatusBarColor(unpack(db.normalColor)) end
         text:SetText("")
-        marker:Hide()
         local ok = pcall(function()
             if signPreview then
                 thresholdAlert:SetAlpha(1); threshold2Alert:SetAlpha(1)
@@ -181,12 +188,11 @@ local function refresh(silent)
     local low = mana * 100 <= maximum * db.threshold
     local low2 = db.threshold2Enabled and mana * 100 <= maximum * db.threshold2
     thresholdAlert:SetAlpha(1); threshold2Alert:SetAlpha(1)
-    thresholdAlert:SetShown(db.sign1 and (signPreview or mana * 100 < maximum * db.threshold))
-    threshold2Alert:SetShown(db.threshold2Enabled and db.sign2 and (signPreview or mana * 100 < maximum * db.threshold2))
+    thresholdAlert:SetShown(db.sign1 and (signPreview or low))
+    threshold2Alert:SetShown(db.threshold2Enabled and db.sign2 and (signPreview or low2))
     local c = low2 and db.lowColor2 or (low and db.lowColor or db.normalColor)
-    local bear = cost()
     bar:SetStatusBarColor(c[1], c[2], c[3])
-    if not silent and ((lastLow == false and low and db.thresholdSound) or (lastLow2 == false and low2 and db.threshold2Sound)) and not UnitIsDeadOrGhost("player") then
+    if not silent and (((lastLow == false or (enteringCombat and db.combat and lastLow == nil)) and low and db.thresholdSound) or ((lastLow2 == false or (enteringCombat and db.combat and lastLow2 == nil)) and low2 and db.threshold2Sound)) and not UnitIsDeadOrGhost("player") then
         PlaySound((SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959, "Master")
     end
     lastLow = low
@@ -195,12 +201,7 @@ local function refresh(silent)
     elseif db.text == 2 then text:SetText(string.format("%d%%", math.floor(mana * 100 / maximum + 0.5)))
     elseif db.text == 3 then text:SetText(string.format("%d / %d  (%d%%)", mana, maximum, math.floor(mana * 100 / maximum + 0.5)))
     else text:SetText("") end
-    if bear and bear <= maximum then
-        marker:ClearAllPoints()
-        marker:SetPoint("TOP", bar, "TOPLEFT", (db.width - 2) * bear / maximum, 0)
-        marker:SetPoint("BOTTOM", bar, "BOTTOMLEFT", (db.width - 2) * bear / maximum, 0)
-        marker:Show()
-    else marker:Hide() end
+
 end
 frame:SetScript("OnDragStart", function(self)
     if db and (db.unlocked or IsShiftKeyDown()) then dragging = true; self:StartMoving() end
@@ -275,7 +276,7 @@ events:SetScript("OnEvent", function(_, event, arg)
         frame:ClearAllPoints()
         frame:SetPoint("CENTER", UIParent, "CENTER", db.x, db.y)
     elseif (event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER") and arg ~= "player" then return end
-    refresh(event == "MODIFIER_STATE_CHANGED" or event == "ADDON_LOADED")
+    refresh(event == "MODIFIER_STATE_CHANGED" or event == "ADDON_LOADED", event == "PLAYER_REGEN_DISABLED")
 end)
 local timer = 0
 events:SetScript("OnUpdate", function(_, elapsed)
@@ -546,6 +547,7 @@ function BearManaAlertOpenBarSettings()
     end)
     options:Hide(); options:Show()
 end
+
 
 
 
