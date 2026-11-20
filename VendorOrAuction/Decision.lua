@@ -136,8 +136,8 @@ function ns.tooltipPrices(link)
         if id then item = "i:" .. id end
     end
     if not item then return vendor end
-    local auction = price("DBMinBuyout", item)
-    if auction and auction > 0 then return vendor, auction, "Мин. выкуп" end
+    local auction = price("DBMarket", item)
+    if auction and auction > 0 then return vendor, auction, "Рыночная цена" end
     auction = price("DBRegionSaleAvg", item)
     if auction and auction > 0 then return vendor, auction, "Средняя продажа" end
     return vendor
