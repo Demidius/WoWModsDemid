@@ -1,6 +1,6 @@
 -- Run with Lua 5.1 from the workspace root.
 VendorOrAuctionDB = {saleRate = 0.3, minProfit = 100, auctionCut = 5, keep = {}, alwaysVendor = {}}
-local quantity, rate, minimum, average, market = 1, 161, 70, 500, 1500
+local quantity, rate, minimum, average, market, recent = 1, 161, 70, 500, 1500, 900
 local inventory
 C_Container = {
     GetContainerNumSlots = function(bag) return bag == 0 and (inventory and #inventory or 1) or 0 end,
@@ -17,6 +17,7 @@ TSM_API = {
         if source == "DBMinBuyout" then return minimum end
         if source == "DBRegionSaleAvg" then return average end
         if source == "DBMarket" then return market end
+        if source == "DBRecent" then return recent end
     end,
 }
 dofile("VendorOrAuction/Decision.lua")
@@ -27,22 +28,18 @@ rate = 300
 assert(ns.evaluate(link).kind == "auction")
 rate = 500
 assert(ns.evaluate(link).kind == "auction")
-local _, marketPrice, marketSource = ns.tooltipPrices(link)
-assert(marketPrice == 1500 and marketSource == "Рыночная цена", "market price must take priority over minimum buyout")
-assert(ns.evaluate(link).price == marketPrice, "the recommendation must use the displayed market price")
-market = 0
-local _, zeroMarketFallback = ns.tooltipPrices(link)
-assert(zeroMarketFallback == 500, "a zero market price should use the regional average")
-market = nil
-local _, tooltipPrice = ns.tooltipPrices(link)
-local decision = ns.evaluate(link)
-assert(tooltipPrice == 500 and decision.price == tooltipPrice, "regional average must be the fallback even if minimum buyout exists")
-assert(decision.source == "Средняя продажа")
-average = nil
-assert(ns.evaluate(link).kind == "check", "minimum buyout alone must not be treated as market price")
-minimum, average, rate = nil, nil, 161
+local _, recentPrice, recentSource = ns.tooltipPrices(link)
+assert(recentPrice == 900 and recentSource == "Последний снимок", "latest snapshot must be used instead of market average or minimum buyout")
+assert(ns.evaluate(link).price == recentPrice, "the recommendation must use the displayed recent price")
+recent = 0
+local _, zeroRecentPrice = ns.tooltipPrices(link)
+assert(zeroRecentPrice == nil and ns.evaluate(link).kind == "check", "zero recent price must not fall back to historical prices")
+recent = nil
+local _, missingRecentPrice = ns.tooltipPrices(link)
+assert(missingRecentPrice == nil and ns.evaluate(link).kind == "check", "missing recent data must not use averages or minimum buyout")
+rate = 161
 assert(ns.evaluate(link).kind == "vendor", "slow sale needs no auction price")
-rate, market = nil, 1500
+rate, recent = nil, 1500
 assert(ns.evaluate(link).kind == "check", "missing rate must not imply a fast sale")
 rate = 500
 quantity = 2
@@ -67,7 +64,7 @@ ns.invalidateBagCounts()
 assert(ns.bagQuantity("item:123:1") == 3 and ns.auctionBagQuantity("item:123:1") == 2, "count only matching and tradable variants")
 assert(ns.bagQuantity("item:123:2") == 4, "do not combine variants with the same item ID")
 assert(ns.evaluate("item:123:1").bagCount == 2)
-market = 100
+recent = 100
 assert(ns.evaluate("item:123:1").kind == "vendor", "other variants must not push profit above the threshold")
 assert(ns.evaluate("item:123:2").kind == "auction", "the same threshold applies to each variant's own quantity")
 assert(ns.isPlayerBagLocation({bagID = 0}) and not ns.isPlayerBagLocation({bagID = -1}) and not ns.isPlayerBagLocation(nil), "bag locations")
