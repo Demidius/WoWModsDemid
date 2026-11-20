@@ -2,11 +2,12 @@
 ## Title: MyMana
 ## Notes: Configurable druid mana bar with threshold indicators.
 ## Author: Codex
-## Version: 1.9.0
+## Version: 1.9.1
 ## OptionalDeps: HidingBar
 ## SavedVariables: BearManaAlertDB
 BearManaAlert.lua
 ManaBar.lua
+
 
 
 
