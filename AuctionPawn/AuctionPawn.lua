@@ -83,7 +83,12 @@ local function evaluateInspected(item, link, stats)
                 local old = math.min(unpack(previousValues))
                 if value > old * 1.005 and value > 0 then
                     local diff = value - old
-                    upgrades[#upgrades + 1] = { ScaleName = scaleName, LocalizedScaleName = label, PercentUpgrade = old > 0 and diff / old or 100 }
+                    upgrades[#upgrades + 1] = {
+                        ScaleName = scaleName, LocalizedScaleName = label,
+                        PercentUpgrade = old > 0 and diff / old or 100,
+                        EmptySlot = old == 0 and (not inspected.gear[slot1] or (slot2 and not inspected.gear[slot2])) or false,
+                        HasComparison = old > 0,
+                    }
                     differences[#differences + 1] = { scale = scaleName, label = label, value = diff }
                 end
             end
@@ -113,6 +118,16 @@ local function evaluate(result)
     local scores = PawnRecalculateItemValuesIfNecessary(item)
     local differences = {}
     for _, upgrade in ipairs(upgrades or {}) do
+        if upgrade.PercentUpgrade and upgrade.PercentUpgrade >= (PawnBigUpgradeThreshold or 100) then
+            upgrade.HasComparison = upgrade.ExistingItemLink ~= nil
+            if not upgrade.HasComparison then
+                local slot1, slot2 = PawnGetSlotsForItemType(item.InvType)
+                local function isEmpty(slot)
+                    return slot and not GetInventoryItemID("player", slot) and not GetInventoryItemTexture("player", slot)
+                end
+                upgrade.EmptySlot = isEmpty(slot1) or isEmpty(slot2) or false
+            end
+        end
         if upgrade.ExistingItemLink then
             local previous = PawnGetItemData(upgrade.ExistingItemLink)
             if previous and previous.Link then
@@ -150,6 +165,17 @@ local function selectDifference(differences)
         end
     end
     return best
+end
+
+local function scoreForUpgrade(entry)
+    if not entry.upgrade then return nil end
+    for _, score in ipairs(entry.scores or {}) do
+        if score[1] == entry.upgrade.ScaleName then
+            local value = PawnCommon.ShowEnchanted and score[2] or score[3]
+            if not value or value <= 0 then value = score[3] end
+            return value
+        end
+    end
 end
 
 local function showRows()
@@ -233,6 +259,16 @@ local function showRows()
                     local digits = math.min(4, math.max(0, PawnCommon.Digits or 1))
                     local sign = selectedStat == "PAWN_DIFFERENCE" and "+" or ""
                     valueText = string.format(sign .. "%." .. digits .. "f", entry.value)
+                elseif not selectedStat and entry.upgrade and entry.upgrade.PercentUpgrade >= (PawnBigUpgradeThreshold or 100) then
+                    if entry.upgrade.EmptySlot then
+                        local score = scoreForUpgrade(entry)
+                        local digits = math.min(4, math.max(0, PawnCommon.Digits or 1))
+                        valueText = score and string.format("Пустой слот %." .. digits .. "f", score) or "Пустой слот"
+                    elseif entry.upgrade.HasComparison then
+                        valueText = "Очень большое"
+                    else
+                        valueText = "Нет сравнения"
+                    end
                 else
                     valueText = selectedStat and string.format("%g", entry.value) or string.format("+%.0f%%", entry.value * 100)
                 end
@@ -479,9 +515,9 @@ local function createPanel()
         local f = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         f:SetPoint("TOPLEFT", x, -156); f:SetWidth(width); f:SetJustifyH("LEFT"); f:SetText(text)
     end
-    heading("Предмет", 20, 245); heading("Шкала", 339, 125); heading("Цена", 470, 130)
+    heading("Предмет", 20, 205); heading("Шкала", 358, 105); heading("Цена", 470, 130)
     header = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    header:SetSize(83, 20); header:SetPoint("TOPLEFT", 250, -151); header:SetText("Улучшение")
+    header:SetSize(118, 20); header:SetPoint("TOPLEFT", 230, -151); header:SetText("Улучшение")
     header:SetScript("OnClick", function() ascending = not ascending; showRows() end)
     for i = 1, PAGE_SIZE do
         local row = CreateFrame("Button", nil, panel)
@@ -491,7 +527,7 @@ local function createPanel()
             local f = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             f:SetPoint("LEFT", x, 0); f:SetWidth(width); f:SetJustifyH("LEFT"); f:SetWordWrap(false); return f
         end
-        row.name = cell(0, 225); row.percent = cell(230, 80); row.scale = cell(319, 125); row.price = cell(450, 130)
+        row.name = cell(0, 205); row.percent = cell(210, 118); row.scale = cell(338, 105); row.price = cell(450, 130)
         row:SetScript("OnClick", function(self) if self.entry then browse:OnBrowseResultSelected(self.entry.result) end end)
         row:SetScript("OnEnter", function(self)
             if self.entry and self.entry.link then GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetHyperlink(self.entry.link); GameTooltip:Show() end
