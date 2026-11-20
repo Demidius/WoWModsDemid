@@ -224,7 +224,7 @@ local function showSettings()
             syncingRate = true
             rateSlider:SetValue(VendorOrAuctionDB.saleRate)
             syncingRate = false
-            status:SetText(TSM_API and "TSM обнаружен. Цена: рыночная, затем средняя региональная." or "TSM не обнаружен. Проверьте, включён ли аддон.")
+            status:SetText(TSM_API and "TSM обнаружен. Цена: последний снимок аукциона (DBRecent)." or "TSM не обнаружен. Проверьте, включён ли аддон.")
         end)
     end
     panel:Show()

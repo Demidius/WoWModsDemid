@@ -136,10 +136,8 @@ function ns.tooltipPrices(link)
         if id then item = "i:" .. id end
     end
     if not item then return vendor end
-    local auction = price("DBMarket", item)
-    if auction and auction > 0 then return vendor, auction, "Рыночная цена" end
-    auction = price("DBRegionSaleAvg", item)
-    if auction and auction > 0 then return vendor, auction, "Средняя продажа" end
+    local auction = price("DBRecent", item)
+    if auction and auction > 0 then return vendor, auction, "Последний снимок" end
     return vendor
 end
 function ns.evaluate(link, context)
@@ -177,7 +175,7 @@ function ns.evaluate(link, context)
         if result.rate and result.rate < db.saleRate then
             result.kind, result.reason = "vendor", "Скорость продаж ниже установленного порога"
         else
-            result.reason = "Нет цены аукциона в TSM"
+            result.reason = "Нет цены последнего снимка аукциона в TSM"
         end
         return result
     end
