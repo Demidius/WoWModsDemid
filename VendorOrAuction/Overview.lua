@@ -196,7 +196,7 @@ local function compactNativeLines(tooltip, link)
     end
 end
 -- The standard tooltip has two columns; overlay two independently aligned value columns.
-local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
+local function addPriceTable(tooltip, vendor, auction, count, tradable, bound, slowSale)
     if not tooltip.voaPriceTable then
         local tableState = {rows = {}}
         tooltip.voaPriceTable = tableState
@@ -217,7 +217,9 @@ local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
     local anchors = {}
     for i, data in ipairs(rows) do
         -- Always build a complete native table first, as a fallback if overlays fail.
-        tooltip:AddDoubleLine(data[1], data[2] .. "  /  " .. data[3], 1, 1, 1, 1, 1, 1)
+        local values = data[2] .. "  /  " .. data[3]
+        if i == 3 and slowSale and auction and not bound then values = "|cffff5555" .. values .. "|r" end
+        tooltip:AddDoubleLine(data[1], values, 1, 1, 1, 1, 1, 1)
         anchors[i] = _G[tooltip:GetName() .. "TextRight" .. tooltip:NumLines()]
     end
     local ok = pcall(function()
@@ -234,8 +236,9 @@ local function addPriceTable(tooltip, vendor, auction, count, tradable, bound)
         local font, size, flags = anchor:GetFont()
         if font then row.unit:SetFont(font, size, flags) row.total:SetFont(font, size, flags) end
         local tint = data[4] and 0.65 or 1
-        row.unit:SetTextColor(tint, tint, tint)
-        row.total:SetTextColor(tint, tint, tint)
+        local red = i == 3 and slowSale and auction and not bound
+        row.unit:SetTextColor(red and 1 or tint, red and 0.33 or tint, red and 0.33 or tint)
+        row.total:SetTextColor(red and 1 or tint, red and 0.33 or tint, red and 0.33 or tint)
         row.unit:SetText(data[2])
         row.total:SetText(data[3])
         row.unit:Show()
@@ -278,7 +281,10 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
             local amount = count and count > 0 and ("  x" .. count) or ""
             tooltip:AddLine(category .. amount, 0.8, 0.8, 0.8)
         end
-        addPriceTable(tooltip, vendor, auction, count, tradable, bound)
+        local rateOk, rate = pcall(ns.saleRate, link)
+        local threshold = VendorOrAuctionDB and VendorOrAuctionDB.saleRate
+        local slowSale = rateOk and type(rate) == "number" and type(threshold) == "number" and rate < threshold
+        addPriceTable(tooltip, vendor, auction, count, tradable, bound, slowSale)
     end)
 end
 

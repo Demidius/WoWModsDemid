@@ -2,7 +2,7 @@ local ADDON = ...
 local events = CreateFrame("Frame")
 local buttons = setmetatable({}, {__mode = "k"})
 local pending, panel
-local defaults = {saleRate = 0.3, minProfit = 100, profitPercent = 50, auctionCut = 5, iconSize = 18}
+local defaults = {saleRate = 0.3, minProfit = 100, auctionCut = 5, iconSize = 18}
 
 local function sizeLabel(label)
     local font = label:GetFont()
@@ -121,13 +121,12 @@ local function showSettings()
         end
         heading("Прибыль и комиссия", -42)
         heading("Медленная продажа", -150)
-        heading("Отображение", -258)
+        heading("Отображение", -218)
         local fields = {
             {"minProfit", "Мин. общая выгода, серебро", 0, 100000, 100, -68},
             {"auctionCut", "Комиссия аукциона, %", 0, 100, 1, -108},
             {"saleRate", "Скорость продаж ниже (0–1)", 0, 1, 1, -176},
-            {"profitPercent", "Выгода ниже цены торговцу, %", 0, 10000, 1, -216},
-            {"iconSize", "Размер значков (8–32)", 8, 32, 1, -284},
+            {"iconSize", "Размер значков (8–32)", 8, 32, 1, -244},
         }
         local boxes = {}
         for i, field in ipairs(fields) do
@@ -142,10 +141,10 @@ local function showSettings()
             boxes[i] = box
         end
         local explanation = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        explanation:SetPoint("TOPLEFT", 25, -326)
+        explanation:SetPoint("TOPLEFT", 25, -286)
         explanation:SetPoint("RIGHT", -25, 0)
         explanation:SetJustifyH("LEFT")
-        explanation:SetText("При низкой скорости продаж учитывается также процент выгоды. Залог не включён.")
+        explanation:SetText("При скорости ниже порога советуем торговца. Красная цена — низкая скорость продажи. Залог не включён.")
         local status = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         status:SetPoint("TOPLEFT", 25, -360)
         status:SetPoint("RIGHT", -25, 0)

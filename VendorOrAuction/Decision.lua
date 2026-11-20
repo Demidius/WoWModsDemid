@@ -89,6 +89,19 @@ local function price(source, item)
     if ok and type(result) == "number" and result >= 0 then return result end
 end
 
+function ns.saleRate(link)
+    if type(link) ~= "string" then return nil end
+    local id = link:match("item:(%d+)")
+    if not id then return nil end
+    local item
+    if TSM_API and type(TSM_API.ToItemString) == "function" then
+        local ok, converted = pcall(TSM_API.ToItemString, link)
+        if ok and type(converted) == "string" then item = converted end
+    end
+    local rate = price("DBRegionSaleRate * 1000", item or ("i:" .. id))
+    return rate and rate / 1000
+end
+
 -- Prices for the compact tooltip are independent of recommendations and bag state.
 function ns.tooltipPrices(link)
     local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
@@ -144,10 +157,18 @@ function ns.evaluate(link, context)
         if ok and type(s) == "string" then item = s end
     end
     item = item or ("i:" .. id)
+    result.rate = ns.saleRate(link)
     result.price = price("DBMinBuyout", item)
     result.source = result.price and "DBMinBuyout" or "DBMarket"
     if not result.price or result.price <= 0 then result.price = price("DBMarket", item) result.source = "DBMarket" end
-    if not result.price or result.price <= 0 then result.reason = "Нет цены аукциона в TSM" return result end
+    if not result.price or result.price <= 0 then
+        if result.rate and result.rate < db.saleRate then
+            result.kind, result.reason = "vendor", "Скорость продаж ниже установленного порога"
+        else
+            result.reason = "Нет цены аукциона в TSM"
+        end
+        return result
+    end
     result.profit = result.price * (1 - db.auctionCut / 100) - vendor
     result.bagCount = countInBags(id)
     if result.bagCount <= 0 then
@@ -155,16 +176,12 @@ function ns.evaluate(link, context)
         return result
     end
     result.totalProfit = result.profit * result.bagCount
-    local rate = price("DBRegionSaleRate * 1000", item)
-    result.rate = rate and rate / 1000
-    if result.totalProfit < db.minProfit then
+    if result.rate and result.rate < db.saleRate then
+        result.kind, result.reason = "vendor", "Скорость продаж ниже установленного порога"
+    elseif result.totalProfit < db.minProfit then
         result.kind, result.reason = "vendor", "Общая выгода за все предметы ниже установленного минимума"
     elseif result.rate == nil then
         result.reason = "Нет данных TSM о скорости продаж"
-    elseif result.rate < db.saleRate and result.profit < vendor * db.profitPercent / 100 then
-        result.kind, result.reason = "vendor", "Медленная продажа и небольшая выгода"
-    elseif result.rate < db.saleRate then
-        result.reason = "Медленная продажа: решите, стоит ли ждать"
     else
         result.kind, result.reason = "auction", "Выгода и скорость продаж выше заданных порогов"
     end
