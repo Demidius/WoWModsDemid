@@ -3,7 +3,7 @@ local file = assert(io.open("VendorOrAuction/Overview.lua", "rb"))
 local source = file:read("*a")
 file:close()
 local start = assert(source:find("local function addPriceTable", 1, true))
-local finish = assert(source:find("if TooltipDataProcessor", start, true))
+local finish = assert(source:find("local function getOwnerBound", start, true))
 local chunk = "local ns = VendorOrAuctionLogic\n" .. source:sub(start, finish - 1) .. "\nreturn addPriceTable"
 VendorOrAuctionLogic = {money = function(value) return tostring(value) end}
 local addPriceTable = assert(loadstring(chunk))()
@@ -42,4 +42,25 @@ addPriceTable(tooltip, 60, 1500, 1, 1, false, true)
 assert(#tooltip.lines == 3 and tooltip.lines[3][2]:find("|cffff5555", 1, true), "fallback must retain red auction price")
 assert(_G.AuditTooltipTextRight3.alpha == 1, "native prices must remain visible")
 assert(not tooltip.voaPriceTable.rows[1].unit.visible, "fallback must hide overlays")
+
+local ownerStart = assert(source:find("local function getOwnerBound", 1, true))
+local ownerEnd = assert(source:find("if TooltipDataProcessor", ownerStart, true))
+local getOwnerBound = assert(loadstring(source:sub(ownerStart, ownerEnd - 1) .. "\nreturn getOwnerBound"))()
+C_Container = {GetContainerItemInfo = function(bag, slot) return {isBound = bag == 1 and slot == 2} end}
+local owner = {GetBagID = function() return 1 end, GetID = function() return 2 end}
+assert(getOwnerBound(owner) == true, "personal items in default bags must be recognized")
+assert(getOwnerBound({BGR = {isBound = true}}) == true, "Baganator binding must be recognized")
+assert(not getOwnerBound({}) and not getOwnerBound(nil))
+
+local compactStart = assert(source:find("local function compactNativeLines", 1, true))
+local compactEnd = assert(source:find("-- The standard tooltip", compactStart, true))
+local compact = assert(loadstring(source:sub(compactStart, compactEnd - 1) .. "\nreturn compactNativeLines"))()
+GetItemInfo = function() return "Item", nil, nil, 15, 10 end
+_G.AuditCompactTextLeft1 = {GetText = function() return "Item" end, GetTextColor = function() return 1, 1, 1 end}
+local compactTip = {GetName = function() return "AuditCompact" end, NumLines = function() return 1 end,
+    ClearLines = function(self) self.cleared = true end,
+    AddDoubleLine = function(self, left, right) self.header = {left, right} end,
+    AddLine = function() end}
+compact(compactTip, "item:123")
+assert(compactTip.cleared and compactTip.header[2] == "Lv. 15 / 10", "levels must appear even without duplicate lines")
 print("Tooltip scenarios passed")

@@ -182,10 +182,11 @@ local function compactNativeLines(tooltip, link)
             if text then lines[#lines + 1] = {text, rightText, r, g, b, rr, rg, rb} end
         end
     end
-    if not removed then return end
     if (itemLevel or requiredLevel) and lines[1] and (not lines[1][2] or lines[1][2] == "") then
         lines[1][2], lines[1][6], lines[1][7], lines[1][8] = "Lv. " .. (itemLevel or "-") .. " / " .. (requiredLevel or "-"), 1, 0.82, 0
+        removed = true
     end
+    if not removed then return end
     tooltip:ClearLines()
     for _, line in ipairs(lines) do
         if line[2] and line[2] ~= "" then
@@ -264,6 +265,16 @@ local function addPriceTable(tooltip, vendor, auction, count, tradable, bound, s
         end
     end
 end
+local function getOwnerBound(owner)
+    if not owner then return nil end
+    if owner.BGR then return owner.BGR.isBound end
+    if not (owner.GetBagID and owner.GetID and C_Container and C_Container.GetContainerItemInfo) then return nil end
+    local ok, info = pcall(function()
+        return C_Container.GetContainerItemInfo(owner:GetBagID(), owner:GetID())
+    end)
+    return ok and info and info.isBound or nil
+end
+
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
         if tooltip ~= GameTooltip or IsShiftKeyDown() then return end
@@ -275,8 +286,7 @@ if TooltipDataProcessor and Enum and Enum.TooltipDataType then
         local countOk, count = pcall(ns.bagQuantity, link)
         if not countOk then count = nil end
         local owner = tooltip:GetOwner()
-        local itemDetails = owner and owner.BGR
-        local bound = itemDetails and itemDetails.isBound
+        local bound = getOwnerBound(owner)
         local tradableOk, tradable = pcall(ns.auctionBagQuantity, link)
         if not tradableOk then tradable = nil end
         pcall(compactNativeLines, tooltip, link)

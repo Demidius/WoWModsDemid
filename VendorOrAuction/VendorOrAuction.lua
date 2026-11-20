@@ -16,6 +16,9 @@ local function registerBaganator()
     Baganator.API.RegisterCornerWidget("Vendor or Auction: Рекомендация", "vendor-or-auction-sell",
         function(label, details)
             if not details or not details.itemLink then return false end
+            -- Prices and quantities are calculated for the current character's bags.
+            local located, inBags = pcall(VendorOrAuctionLogic.isPlayerBagLocation, details.itemLocation)
+            if not located or not inBags then return false end
             local result = VendorOrAuctionLogic.safe(details.itemLink, {bound = details.isBound, quest = details.isQuestItem})
             if result.loading then return nil end
             local icon = VendorOrAuctionLogic.icons[result.kind]
@@ -83,6 +86,9 @@ local function refresh()
         for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do pcall(updateFrame, frame) end
     end
     for button in pairs(buttons) do pcall(updateButton, button) end
+    if Baganator and Baganator.API and Baganator.API.RequestItemButtonsRefresh then
+        pcall(Baganator.API.RequestItemButtonsRefresh)
+    end
 end
 local function schedule()
     if pending then return end
@@ -91,9 +97,6 @@ local function schedule()
 end
 local function refreshAll()
     schedule()
-    if Baganator and Baganator.API and Baganator.API.RequestItemButtonsRefresh then
-        pcall(Baganator.API.RequestItemButtonsRefresh)
-    end
 end
 local function hookFrame(frame)
     if frame and type(frame.UpdateItems) == "function" then

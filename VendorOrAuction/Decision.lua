@@ -16,13 +16,34 @@ function ns.playerBags()
     return bags
 end
 
+function ns.isPlayerBagLocation(location)
+    if type(location) ~= "table" or type(location.bagID) ~= "number" then return false end
+    for _, bag in ipairs(ns.playerBags()) do
+        if bag == location.bagID then return true end
+    end
+    return false
+end
+
 local bagCounts, allBagCounts
 
 function ns.invalidateBagCounts()
     bagCounts, allBagCounts = nil, nil
 end
 
-local function countInBags(itemID)
+-- TSM can value variants of the same item ID differently. Count them separately.
+local function itemKey(link)
+    if type(link) ~= "string" then return nil end
+    if TSM_API and type(TSM_API.ToItemString) == "function" then
+        local ok, item = pcall(TSM_API.ToItemString, link)
+        if ok and type(item) == "string" and item ~= "" then return item end
+    end
+    local id = link:match("item:(%d+)")
+    return id and ("i:" .. id) or nil
+end
+
+local function countInBags(link)
+    local wanted = itemKey(link)
+    if not wanted then return 0 end
     if not bagCounts then
         local counts, allCounts = {}, {}
         if C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo then
@@ -30,31 +51,29 @@ local function countInBags(itemID)
                 local slots = C_Container.GetContainerNumSlots(bag) or 0
                 for slot = 1, slots do
                     local info = C_Container.GetContainerItemInfo(bag, slot)
-                    local id = info and (info.itemID or (C_Container.GetContainerItemID and C_Container.GetContainerItemID(bag, slot)))
-                    if id then
+                    local itemLink = info and (info.hyperlink or (C_Container.GetContainerItemLink and C_Container.GetContainerItemLink(bag, slot)))
+                    local key = itemLink and itemKey(itemLink)
+                    if key then
                         local quantity = info.stackCount or 1
-                        allCounts[id] = (allCounts[id] or 0) + quantity
-                        if not info.isBound then counts[id] = (counts[id] or 0) + quantity end
+                        allCounts[key] = (allCounts[key] or 0) + quantity
+                        if not info.isBound then counts[key] = (counts[key] or 0) + quantity end
                     end
                 end
             end
         end
         bagCounts, allBagCounts = counts, allCounts
     end
-    return bagCounts[itemID] or 0
+    return bagCounts[wanted] or 0
 end
 function ns.bagQuantity(link)
-    if type(link) ~= "string" then return nil end
-    local id = tonumber(link:match("item:(%d+)"))
-    if not id then return nil end
-    countInBags(id)
-    return allBagCounts and (allBagCounts[id] or 0) or 0
+    local key = itemKey(link)
+    if not key then return nil end
+    countInBags(link)
+    return allBagCounts and (allBagCounts[key] or 0) or 0
 end
 
 function ns.auctionBagQuantity(link)
-    if type(link) ~= "string" then return nil end
-    local id = tonumber(link:match("item:(%d+)"))
-    return id and countInBags(id) or nil
+    return itemKey(link) and countInBags(link) or nil
 end
 
 function ns.itemCategory(link)
@@ -163,7 +182,7 @@ function ns.evaluate(link, context)
         return result
     end
     result.profit = result.price * (1 - db.auctionCut / 100) - vendor
-    result.bagCount = countInBags(id)
+    result.bagCount = countInBags(link)
     if result.bagCount <= 0 then
         result.reason = "Нет подходящих предметов в сумках для расчёта"
         return result
