@@ -243,7 +243,10 @@ local function addPriceTable(tooltip, vendor, auction, count, tradable, bound, s
         row.total:SetText(data[3])
         row.unit:Show()
         row.total:Show()
-        maxTotalWidth = math.max(maxTotalWidth, row.total:GetStringWidth() or 0)
+        local width = row.total:GetStringWidth()
+        if issecretvalue and issecretvalue(width) then error("Tooltip width unavailable") end
+        if type(width) ~= "number" then error("Tooltip width unavailable") end
+        maxTotalWidth = math.max(maxTotalWidth, width)
     end
     for _, row in ipairs(tableState.rows) do
         row.unit:ClearAllPoints()

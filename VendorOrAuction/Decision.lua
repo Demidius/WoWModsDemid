@@ -151,16 +151,9 @@ function ns.evaluate(link, context)
     if not vendor or vendor <= 0 then result.reason = "Нет цены продажи торговцу" return result end
     if context.bound then result.kind, result.reason = "check", "Персональный предмет: аукцион недоступен" return result end
     if not TSM_API then result.reason = "TSM недоступен" return result end
-    local item
-    if type(TSM_API.ToItemString) == "function" then
-        local ok, s = pcall(TSM_API.ToItemString, link)
-        if ok and type(s) == "string" then item = s end
-    end
-    item = item or ("i:" .. id)
     result.rate = ns.saleRate(link)
-    result.price = price("DBMinBuyout", item)
-    result.source = result.price and "DBMinBuyout" or "DBMarket"
-    if not result.price or result.price <= 0 then result.price = price("DBMarket", item) result.source = "DBMarket" end
+    local _, auction, source = ns.tooltipPrices(link)
+    result.price, result.source = auction, source
     if not result.price or result.price <= 0 then
         if result.rate and result.rate < db.saleRate then
             result.kind, result.reason = "vendor", "Скорость продаж ниже установленного порога"

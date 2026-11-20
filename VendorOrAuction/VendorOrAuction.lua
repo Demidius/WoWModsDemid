@@ -170,7 +170,7 @@ local function showSettings()
         end)
         panel:SetScript("OnShow", function()
             for i, field in ipairs(fields) do boxes[i]:SetText(tostring(VendorOrAuctionDB[field[1]] / field[5])) end
-            status:SetText(TSM_API and "TSM обнаружен. Цена: DBMinBuyout, затем DBMarket." or "TSM не обнаружен. Проверьте, включён ли аддон.")
+            status:SetText(TSM_API and "TSM обнаружен. Цена: минимум выкупа, затем средняя региональная." or "TSM не обнаружен. Проверьте, включён ли аддон.")
         end)
     end
     panel:Show()
@@ -226,7 +226,7 @@ events:SetScript("OnEvent", function(_, event, arg)
         end
         if not TSM_API then print("|cffffcc00Vendor or Auction:|r TSM не найден. Проверьте, включён ли он.") end
         schedule()
-    elseif event == "BAG_UPDATE_DELAYED" then
+    elseif event == "BAG_UPDATE_DELAYED" or event == "GET_ITEM_INFO_RECEIVED" then
         VendorOrAuctionLogic.invalidateBagCounts()
         refreshAll()
     elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_TURNED_IN" then
