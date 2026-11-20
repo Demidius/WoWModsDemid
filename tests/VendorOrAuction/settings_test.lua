@@ -55,6 +55,7 @@ for _, widget in ipairs(widgets) do
 end
 assert(panel.shown and boxes[1]:GetText() == "2.5" and boxes[2]:GetText() == "7", "first opening must populate saved values")
 assert(boxes[3]:GetText() == "0.36" and boxes[4]:GetText() == "21" and slider.value == 0.36)
+assert(buttons[1]:GetText() == "<" and buttons[2]:GetText() == ">", "adjustment buttons should show arrows")
 boxes[3]:SetText("0,51")
 assert(slider.value == 0.51 and boxes[3]:GetText() == "0,51", "typing should update the slider without changing the text")
 slider:SetValue(0.42)

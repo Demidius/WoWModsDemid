@@ -150,10 +150,10 @@ local function showSettings()
                     arrow:SetSize(22, 22)
                     if direction < 0 then
                         arrow:SetPoint("RIGHT", box, "LEFT", -4, 0)
-                        arrow:SetText("−")
+                        arrow:SetText("<")
                     else
                         arrow:SetPoint("LEFT", box, "RIGHT", 4, 0)
-                        arrow:SetText("+")
+                        arrow:SetText(">")
                     end
                     arrow:SetScript("OnClick", function()
                         local n = tonumber((box:GetText():gsub(",", "."))) or VendorOrAuctionDB[field[1]] / field[5]
