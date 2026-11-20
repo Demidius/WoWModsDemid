@@ -107,6 +107,8 @@ end
 local function showSettings()
     if not panel then
         panel = CreateFrame("Frame", "VendorOrAuctionSettings", UIParent, "BasicFrameTemplateWithInset")
+        -- A newly created frame may already be shown before its OnShow handler exists.
+        panel:Hide()
         panel:SetFrameStrata("DIALOG")
         panel:SetToplevel(true)
         panel:SetSize(490, 445)
@@ -124,12 +126,12 @@ local function showSettings()
         end
         heading("Прибыль и комиссия", -42)
         heading("Медленная продажа", -150)
-        heading("Отображение", -218)
+        heading("Отображение", -240)
         local fields = {
             {"minProfit", "Мин. общая выгода, серебро", 0, 100000, 100, -68},
-            {"auctionCut", "Комиссия аукциона, %", 0, 100, 1, -108},
+            {"auctionCut", "Комиссия аукциона, %", 0, 100, 1, -108, 1},
             {"saleRate", "Скорость продаж ниже (0–1)", 0, 1, 1, -176},
-            {"iconSize", "Размер значков (8–32)", 8, 32, 1, -244},
+            {"iconSize", "Размер значков (8–32)", 8, 32, 1, -266, 1},
         }
         local boxes = {}
         for i, field in ipairs(fields) do
@@ -138,13 +140,59 @@ local function showSettings()
             title:SetText(field[2])
             local box = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
             box:SetSize(85, 25)
-            box:SetPoint("TOPRIGHT", -38, field[6] + 6)
+            box:SetPoint("TOPRIGHT", -48, field[6] + 6)
             box:SetAutoFocus(false)
             box:SetMaxLetters(12)
             boxes[i] = box
+            if field[7] then
+                for _, direction in ipairs({-1, 1}) do
+                    local arrow = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+                    arrow:SetSize(22, 22)
+                    if direction < 0 then
+                        arrow:SetPoint("RIGHT", box, "LEFT", -4, 0)
+                        arrow:SetText("<")
+                    else
+                        arrow:SetPoint("LEFT", box, "RIGHT", 4, 0)
+                        arrow:SetText(">")
+                    end
+                    arrow:SetScript("OnClick", function()
+                        local n = tonumber((box:GetText():gsub(",", "."))) or VendorOrAuctionDB[field[1]] / field[5]
+                        n = math.max(field[3], math.min(field[4], n + direction * field[7]))
+                        box:SetText(tostring(n))
+                    end)
+                end
+            end
         end
+        local syncingRate = false
+        local rateSlider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+        rateSlider:SetSize(270, 16)
+        rateSlider:SetPoint("TOPLEFT", 30, -203)
+        rateSlider:SetMinMaxValues(0, 1)
+        rateSlider:SetValueStep(0.01)
+        if rateSlider.SetObeyStepOnDrag then rateSlider:SetObeyStepOnDrag(true) end
+        local rateMin = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        rateMin:SetPoint("TOPLEFT", rateSlider, "BOTTOMLEFT", 0, 0)
+        rateMin:SetText("0")
+        local rateMax = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        rateMax:SetPoint("TOPRIGHT", rateSlider, "BOTTOMRIGHT", 0, 0)
+        rateMax:SetText("1")
+        rateSlider:SetScript("OnValueChanged", function(_, value)
+            if syncingRate then return end
+            syncingRate = true
+            boxes[3]:SetText(string.format("%.2f", math.floor(value * 100 + 0.5) / 100))
+            syncingRate = false
+        end)
+        boxes[3]:SetScript("OnTextChanged", function(self)
+            if syncingRate then return end
+            local value = tonumber((self:GetText():gsub(",", ".")))
+            if value and value >= 0 and value <= 1 then
+                syncingRate = true
+                rateSlider:SetValue(value)
+                syncingRate = false
+            end
+        end)
         local explanation = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        explanation:SetPoint("TOPLEFT", 25, -286)
+        explanation:SetPoint("TOPLEFT", 25, -310)
         explanation:SetPoint("RIGHT", -25, 0)
         explanation:SetJustifyH("LEFT")
         explanation:SetText("При скорости ниже порога советуем торговца. Красная цена — низкая скорость продажи. Залог не включён.")
@@ -173,6 +221,9 @@ local function showSettings()
         end)
         panel:SetScript("OnShow", function()
             for i, field in ipairs(fields) do boxes[i]:SetText(tostring(VendorOrAuctionDB[field[1]] / field[5])) end
+            syncingRate = true
+            rateSlider:SetValue(VendorOrAuctionDB.saleRate)
+            syncingRate = false
             status:SetText(TSM_API and "TSM обнаружен. Цена: минимум выкупа, затем средняя региональная." or "TSM не обнаружен. Проверьте, включён ли аддон.")
         end)
     end
