@@ -1,6 +1,6 @@
 -- Run with Lua 5.1 from the workspace root.
 VendorOrAuctionDB = {saleRate = 0.3, minProfit = 100, auctionCut = 5, keep = {}, alwaysVendor = {}}
-local quantity, rate, minimum, average, market = 1, 161, 1500, 500, 900
+local quantity, rate, minimum, average, market = 1, 161, 70, 500, 1500
 local inventory
 C_Container = {
     GetContainerNumSlots = function(bag) return bag == 0 and (inventory and #inventory or 1) or 0 end,
@@ -27,14 +27,22 @@ rate = 300
 assert(ns.evaluate(link).kind == "auction")
 rate = 500
 assert(ns.evaluate(link).kind == "auction")
-minimum = nil
+local _, marketPrice, marketSource = ns.tooltipPrices(link)
+assert(marketPrice == 1500 and marketSource == "Рыночная цена", "market price must take priority over minimum buyout")
+assert(ns.evaluate(link).price == marketPrice, "the recommendation must use the displayed market price")
+market = 0
+local _, zeroMarketFallback = ns.tooltipPrices(link)
+assert(zeroMarketFallback == 500, "a zero market price should use the regional average")
+market = nil
 local _, tooltipPrice = ns.tooltipPrices(link)
 local decision = ns.evaluate(link)
-assert(tooltipPrice == 500 and decision.price == tooltipPrice, "tooltip and recommendation must agree")
+assert(tooltipPrice == 500 and decision.price == tooltipPrice, "regional average must be the fallback even if minimum buyout exists")
 assert(decision.source == "Средняя продажа")
+average = nil
+assert(ns.evaluate(link).kind == "check", "minimum buyout alone must not be treated as market price")
 minimum, average, rate = nil, nil, 161
 assert(ns.evaluate(link).kind == "vendor", "slow sale needs no auction price")
-rate, minimum = nil, 1500
+rate, market = nil, 1500
 assert(ns.evaluate(link).kind == "check", "missing rate must not imply a fast sale")
 rate = 500
 quantity = 2
@@ -59,7 +67,7 @@ ns.invalidateBagCounts()
 assert(ns.bagQuantity("item:123:1") == 3 and ns.auctionBagQuantity("item:123:1") == 2, "count only matching and tradable variants")
 assert(ns.bagQuantity("item:123:2") == 4, "do not combine variants with the same item ID")
 assert(ns.evaluate("item:123:1").bagCount == 2)
-minimum = 100
+market = 100
 assert(ns.evaluate("item:123:1").kind == "vendor", "other variants must not push profit above the threshold")
 assert(ns.evaluate("item:123:2").kind == "auction", "the same threshold applies to each variant's own quantity")
 assert(ns.isPlayerBagLocation({bagID = 0}) and not ns.isPlayerBagLocation({bagID = -1}) and not ns.isPlayerBagLocation(nil), "bag locations")
