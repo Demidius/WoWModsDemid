@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: Buff Reminder
+## Notes: Напоминания о еде, отдыхе и выбранных усилениях.
+## Author: Codex
+## Version: 1.2.1
+## SavedVariablesPerCharacter: BuffReminderDB
+BuffReminder.lua
