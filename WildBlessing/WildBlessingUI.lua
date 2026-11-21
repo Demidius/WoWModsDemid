@@ -1,5 +1,6 @@
 local addonName = ...
 local settings, refreshSettings
+local playersWindow, refreshPlayers
 
 local function label(parent, text, x, y, font)
     local value = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlight")
@@ -7,6 +8,81 @@ local function label(parent, text, x, y, font)
     value:SetJustifyH("LEFT")
     value:SetText(text)
     return value
+end
+
+local function togglePlayers()
+    if playersWindow then
+        if playersWindow:IsShown() then playersWindow:Hide() else playersWindow:Show() end
+        return
+    end
+    playersWindow = CreateFrame("Frame", "WildBlessingPlayers", UIParent, "BasicFrameTemplateWithInset")
+    playersWindow:SetSize(390, 450)
+    playersWindow:SetPoint("CENTER")
+    playersWindow:SetFrameStrata("DIALOG")
+    playersWindow:SetClampedToScreen(true)
+    playersWindow:SetMovable(true)
+    playersWindow:EnableMouse(true)
+    playersWindow:RegisterForDrag("LeftButton")
+    playersWindow:SetScript("OnDragStart", playersWindow.StartMoving)
+    playersWindow:SetScript("OnDragStop", playersWindow.StopMovingOrSizing)
+    playersWindow.TitleText:SetText("My Blessing — игроки")
+    table.insert(UISpecialFrames, "WildBlessingPlayers")
+
+    local count = label(playersWindow, "", 28, -40, "GameFontNormal")
+    local scroll = CreateFrame("ScrollFrame", "WildBlessingPlayersScroll", playersWindow, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 28, -70)
+    scroll:SetSize(310, 315)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(310, 315)
+    scroll:SetScrollChild(content)
+    local rows = {}
+    local empty = label(content, "Пока нет сохранённых игроков.", 4, -8, "GameFontDisable")
+    refreshPlayers = function()
+        local entries, seen = {}, {}
+        for _, player in pairs(WildBlessingDB.names or {}) do
+            entries[#entries + 1] = { name = player.name, number = player.number }
+            if player.guid then seen[player.guid] = true end
+        end
+        -- Earlier versions could store a GUID without a name; retain its number visibly.
+        for guid, number in pairs(WildBlessingDB.players or {}) do
+            if not seen[guid] then
+                entries[#entries + 1] = { name = "Имя не сохранено", number = number }
+            end
+        end
+        table.sort(entries, function(a, b)
+            if a.number == b.number then return a.name < b.name end
+            return a.number < b.number
+        end)
+        count:SetText("Уникальных игроков: " .. WildBlessingDB.count)
+        empty:SetShown(#entries == 0)
+        for i, player in ipairs(entries) do
+            local row = rows[i]
+            if not row then
+                row = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                row:SetPoint("TOPLEFT", 4, -(i - 1) * 26 - 4)
+                row:SetWidth(300)
+                row:SetJustifyH("LEFT")
+                row:SetWordWrap(false)
+                rows[i] = row
+            end
+            row:SetText("#" .. player.number .. "  " .. player.name)
+            row:Show()
+        end
+        for i = #entries + 1, #rows do rows[i]:Hide() end
+        local height = math.max(315, #entries * 26)
+        content:SetHeight(height)
+        if scroll:GetVerticalScroll() > math.max(0, height - 315) then
+            scroll:SetVerticalScroll(math.max(0, height - 315))
+        end
+    end
+    local close = CreateFrame("Button", nil, playersWindow, "UIPanelButtonTemplate")
+    close:SetSize(110, 25)
+    close:SetPoint("BOTTOM", 0, 18)
+    close:SetText("Закрыть")
+    close:SetScript("OnClick", function() playersWindow:Hide() end)
+    playersWindow:SetScript("OnShow", refreshPlayers)
+    playersWindow:Hide()
+    playersWindow:Show()
 end
 
 function WildBlessingToggleSettings()
@@ -58,6 +134,11 @@ function WildBlessingToggleSettings()
     local instruction = label(settings, "Перетащите значок на панель действий.\nМакрос применяет Знак к цели под курсором.", 85, -48)
     instruction:SetWidth(390)
     local count = label(settings, "", 30, -100, "GameFontNormal")
+    local playersButton = CreateFrame("Button", nil, settings, "UIPanelButtonTemplate")
+    playersButton:SetSize(145, 25)
+    playersButton:SetPoint("TOPRIGHT", -25, -94)
+    playersButton:SetText("Список игроков")
+    playersButton:SetScript("OnClick", togglePlayers)
     label(settings, "Тексты благословений", 30, -128, "GameFontNormal")
     label(settings, "В тексте используйте {имя} и {номер}.", 30, -151, "GameFontHighlightSmall")
 
@@ -150,6 +231,7 @@ end
 
 function WildBlessingRefreshSettings()
     if settings and settings:IsShown() and refreshSettings then refreshSettings() end
+    if playersWindow and playersWindow:IsShown() and refreshPlayers then refreshPlayers() end
 end
 
 local minimapButton = CreateFrame("Button", "WildBlessingMinimapButton", Minimap)

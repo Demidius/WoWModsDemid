@@ -167,6 +167,7 @@ local function recordBlessing(player, attempt)
     if number then
         -- Migrate identities recorded by the previous GUID-only version silently.
         WildBlessingDB.names[key] = { name = name, guid = guid, number = number }
+        if WildBlessingRefreshSettings then WildBlessingRefreshSettings() end
         return
     end
     WildBlessingDB.count = WildBlessingDB.count + 1
