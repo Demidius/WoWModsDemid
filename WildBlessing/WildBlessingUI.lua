@@ -16,7 +16,7 @@ local function togglePlayers()
         return
     end
     playersWindow = CreateFrame("Frame", "WildBlessingPlayers", UIParent, "BasicFrameTemplateWithInset")
-    playersWindow:SetSize(390, 450)
+    playersWindow:SetSize(390, 520)
     playersWindow:SetPoint("CENTER")
     playersWindow:SetFrameStrata("DIALOG")
     playersWindow:SetClampedToScreen(true)
@@ -36,7 +36,44 @@ local function togglePlayers()
     content:SetSize(310, 315)
     scroll:SetScrollChild(content)
     local rows = {}
+    local selectedName
     local empty = label(content, "Пока нет сохранённых игроков.", 4, -8, "GameFontDisable")
+    label(playersWindow, "Нажмите на имя, затем Ctrl+C для копирования.", 28, -397, "GameFontHighlightSmall")
+    local copyBox = CreateFrame("EditBox", nil, playersWindow, "InputBoxTemplate")
+    copyBox:SetSize(220, 24)
+    copyBox:SetPoint("TOPLEFT", 35, -424)
+    copyBox:SetAutoFocus(false)
+    copyBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    copyBox:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+    local findButton = CreateFrame("Button", nil, playersWindow, "UIPanelButtonTemplate")
+    findButton:SetSize(95, 25)
+    findButton:SetPoint("TOPLEFT", 266, -423)
+    findButton:SetText("Найти")
+    findButton:Disable()
+    findButton:SetScript("OnClick", function()
+        if not selectedName then return end
+        local query = 'n-"' .. selectedName:gsub('"', '') .. '"'
+        if C_GameRules and C_GameRules.IsGameRuleActive and Enum and Enum.GameRule
+            and Enum.GameRule.IngameWhoListDisabled
+            and C_GameRules.IsGameRuleActive(Enum.GameRule.IngameWhoListDisabled) then
+            print("|cff7fcf75My Blessing:|r Игровой поиск персонажей сейчас недоступен.")
+            return
+        end
+        if C_FriendList and C_FriendList.SendWho then
+            local ok = pcall(function()
+                if ShowWhoPanel then ShowWhoPanel() end
+                if WhoFrameEditBox then WhoFrameEditBox:SetText(query) end
+                local origin = Enum and Enum.SocialWhoOrigin and Enum.SocialWhoOrigin.Chat
+                C_FriendList.SendWho(query, origin)
+            end)
+            if ok then
+                playersWindow:Hide()
+                if settings and settings:IsShown() then settings:Hide() end
+                return
+            end
+        end
+        ChatFrame_OpenChat("/who " .. query)
+    end)
     refreshPlayers = function()
         local entries, seen = {}, {}
         for _, player in pairs(WildBlessingDB.names or {}) do
@@ -46,7 +83,7 @@ local function togglePlayers()
         -- Earlier versions could store a GUID without a name; retain its number visibly.
         for guid, number in pairs(WildBlessingDB.players or {}) do
             if not seen[guid] then
-                entries[#entries + 1] = { name = "Имя не сохранено", number = number }
+                entries[#entries + 1] = { name = "Имя не сохранено", number = number, missingName = true }
             end
         end
         table.sort(entries, function(a, b)
@@ -58,14 +95,35 @@ local function togglePlayers()
         for i, player in ipairs(entries) do
             local row = rows[i]
             if not row then
-                row = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                row = CreateFrame("Button", nil, content)
                 row:SetPoint("TOPLEFT", 4, -(i - 1) * 26 - 4)
-                row:SetWidth(300)
-                row:SetJustifyH("LEFT")
-                row:SetWordWrap(false)
+                row:SetSize(300, 24)
+                row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                row.text:SetPoint("LEFT", 0, 0)
+                row.text:SetWidth(300)
+                row.text:SetJustifyH("LEFT")
+                row.text:SetWordWrap(false)
+                row:SetScript("OnClick", function(self)
+                    if not self.playerName then return end
+                    selectedName = self.playerName
+                    copyBox:SetText(selectedName)
+                    copyBox:SetFocus()
+                    copyBox:HighlightText()
+                    findButton:Enable()
+                end)
+                row:SetScript("OnEnter", function(self)
+                    if not self.playerName then return end
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine(self.playerName)
+                    GameTooltip:AddLine("Нажмите, чтобы скопировать или найти", 1, 1, 1)
+                    GameTooltip:Show()
+                end)
+                row:SetScript("OnLeave", function() GameTooltip:Hide() end)
                 rows[i] = row
             end
-            row:SetText("#" .. player.number .. "  " .. player.name)
+            row.playerName = not player.missingName and player.name or nil
+            row.text:SetText("#" .. player.number .. "  " .. player.name)
             row:Show()
         end
         for i = #entries + 1, #rows do rows[i]:Hide() end
@@ -85,6 +143,7 @@ local function togglePlayers()
         refreshPlayers()
     end)
     playersWindow:SetScript("OnHide", function()
+        copyBox:ClearFocus()
         if settings and not settings:IsShown() then settings:Show() end
     end)
     playersWindow:Hide()
