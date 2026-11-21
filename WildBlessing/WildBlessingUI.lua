@@ -80,12 +80,22 @@ local function togglePlayers()
     close:SetPoint("BOTTOM", 0, 18)
     close:SetText("Закрыть")
     close:SetScript("OnClick", function() playersWindow:Hide() end)
-    playersWindow:SetScript("OnShow", refreshPlayers)
+    playersWindow:SetScript("OnShow", function()
+        if settings and settings:IsShown() then settings:Hide() end
+        refreshPlayers()
+    end)
+    playersWindow:SetScript("OnHide", function()
+        if settings and not settings:IsShown() then settings:Show() end
+    end)
     playersWindow:Hide()
     playersWindow:Show()
 end
 
 function WildBlessingToggleSettings()
+    if playersWindow and playersWindow:IsShown() then
+        playersWindow:Hide()
+        return
+    end
     if settings then
         if settings:IsShown() then settings:Hide() else settings:Show() end
         return
