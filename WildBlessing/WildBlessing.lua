@@ -3,6 +3,8 @@ local frame = CreateFrame("Frame")
 local pending = {}
 local markName
 local casts = {}
+local attempts = {}
+local sendingAttempt
 local isDruid = false
 
 local oldBlessings = {
@@ -14,11 +16,11 @@ local oldBlessings = {
 }
 
 local defaultBlessings = {
-    "Elune guide you, {имя}! Mark #{номер}.",
-    "Stars watch over you, {имя}! Mark #{номер}.",
-    "The forest blesses you, {имя}! Mark #{номер}.",
-    "Walk in moonlight, {имя}! Mark #{номер}.",
-    "Dream in peace, {имя}! Mark #{номер}.",
+    "Elune guide you, {имя}! #{номер}.",
+    "Stars watch over you, {имя}! #{номер}.",
+    "The forest blesses you, {имя}! #{номер}.",
+    "Walk in moonlight, {имя}! #{номер}.",
+    "Dream in peace, {имя}! #{номер}.",
 }
 
 local function sayLocal(message)
@@ -40,15 +42,24 @@ local function createMacro()
         sayLocal("Создание макроса недоступно в бою. После боя введите /wild macro.")
         return
     end
-    if GetMacroIndexByName("WildMark") ~= 0 then
-        return
-    end
+    local existing = GetMacroIndexByName("WildMark")
     local name = getMarkName()
     if not name then
         sayLocal("Не удалось определить название заклинания. Попробуйте /wild macro позже.")
         return
     end
-    local body = "#showtooltip " .. name .. "\n/cast [@mouseover,help,nodead] " .. name
+    local legacyBody = "#showtooltip " .. name .. "\n/cast [@mouseover,help,nodead] " .. name
+    local body = "#showtooltip " .. name .. "\n/run WildBlessingAnnounce()\n/cast [@mouseover,help,nodead] " .. name
+    if existing ~= 0 then
+        local _, _, oldBody = GetMacroInfo(existing)
+        if oldBody == legacyBody then
+            local ok = pcall(EditMacro, existing, nil, nil, body)
+            if ok then sayLocal("Макрос WildMark обновлён.") end
+        elseif oldBody ~= body then
+            sayLocal("Ваш макрос WildMark изменён вручную; добавьте перед /cast строку /run WildBlessingAnnounce() или создайте макрос заново.")
+        end
+        return
+    end
     local ok, index = pcall(CreateMacro, "WildMark", "INV_Misc_QuestionMark", body, 1)
     if ok and index then
         sayLocal("Макрос WildMark создан в разделе макросов персонажа. Перетащите его на панель.")
@@ -110,7 +121,42 @@ local function isMark(spellID)
     return not isSecret(name) and not isSecret(markName) and name ~= nil and name == markName
 end
 
-local function recordBlessing(player)
+local function formatBlessing(name, number)
+    local blessings = WildBlessingDB.blessings
+    local template = blessings[((WildBlessingDB.messages or 0) % #blessings) + 1]
+    local text = template:gsub("{имя}", function() return name end)
+    return (text:gsub("{номер}", function() return tostring(number) end))
+end
+
+-- Called synchronously by the player's WildMark button, before the cast request.
+function WildBlessingAnnounce()
+    if not isDruid or not WildBlessingDB then return end
+    local isPlayer = UnitIsPlayer("mouseover")
+    local friendly = UnitCanAssist("player", "mouseover")
+    local dead = UnitIsDeadOrGhost("mouseover")
+    if isSecret(isPlayer) or isSecret(friendly) or isSecret(dead)
+        or not isPlayer or not friendly or dead then return end
+    local name, guid = GetUnitName("mouseover", true), UnitGUID("mouseover")
+    if isSecret(name) or isSecret(guid) or type(name) ~= "string" or type(guid) ~= "string"
+        or not guid:match("^Player%-") then return end
+    if WildBlessingDB.names[string.lower(name)] or WildBlessingDB.players[guid] or attempts[guid] then return end
+    local send = C_ChatInfo and C_ChatInfo.SendChatMessage or SendChatMessage
+    if not send then return end
+    local attempt = { text = formatBlessing(name, WildBlessingDB.count + 1), guid = guid }
+    attempts[guid] = attempt
+    sendingAttempt = attempt
+    local ok = pcall(send, attempt.text, "SAY")
+    sendingAttempt = nil
+    if not ok or attempt.blocked then
+        attempts[guid] = nil
+        return
+    end
+    C_Timer.After(3, function()
+        if attempts[guid] == attempt then attempts[guid] = nil end
+    end)
+end
+
+local function recordBlessing(player, attempt)
     local name, guid = player.name, player.guid
     local key = string.lower(name)
     if WildBlessingDB.names[key] then return end
@@ -125,13 +171,19 @@ local function recordBlessing(player)
     WildBlessingDB.players[guid] = number
     WildBlessingDB.names[key] = { name = name, guid = guid, number = number }
     if WildBlessingRefreshSettings then WildBlessingRefreshSettings() end
-    local blessings = WildBlessingDB.blessings
-    local template = blessings[((WildBlessingDB.messages or 0) % #blessings) + 1]
+    local text = formatBlessing(name, number)
     WildBlessingDB.messages = (WildBlessingDB.messages or 0) + 1
-    local text = template:gsub("{имя}", function() return name end)
-    text = text:gsub("{номер}", function() return tostring(number) end)
-    pending[#pending + 1] = text
-    openNext()
+    if attempt then
+        C_Timer.After(2, function()
+            if not attempt.confirmed then
+                pending[#pending + 1] = text
+                sayLocal("Отправка не подтверждена. При необходимости введите /wild next.")
+            end
+        end)
+    else
+        pending[#pending + 1] = text
+        openNext()
+    end
 end
 
 SLASH_WILDBLESSING1 = "/wild"
@@ -187,6 +239,9 @@ end
 
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("CHAT_MSG_SAY")
+frame:RegisterEvent("ADDON_ACTION_BLOCKED")
+frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 frame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
 frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 frame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
@@ -201,6 +256,15 @@ frame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3, arg4)
             WildBlessingDB.blessings = {}
             for i, text in ipairs(defaultBlessings) do WildBlessingDB.blessings[i] = text end
         end
+        if not WildBlessingDB.shortDefaults then
+            for i, text in ipairs(WildBlessingDB.blessings) do
+                for _, newText in ipairs(defaultBlessings) do
+                    local previous = newText:gsub("! #", "! Mark #")
+                    if text == previous then WildBlessingDB.blessings[i] = newText; break end
+                end
+            end
+            WildBlessingDB.shortDefaults = true
+        end
         if not WildBlessingDB.englishDefaults then
             for i, text in ipairs(WildBlessingDB.blessings) do
                 for j, oldText in ipairs(oldBlessings) do
@@ -212,6 +276,18 @@ frame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3, arg4)
             end
             WildBlessingDB.englishDefaults = true
         end
+    elseif (event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN") and sendingAttempt then
+        sendingAttempt.blocked = true
+    elseif event == "CHAT_MSG_SAY" and not isSecret(arg1) and not isSecret(arg2)
+        and type(arg1) == "string" and type(arg2) == "string" then
+        local myName = UnitName("player")
+        local myFullName = GetUnitName("player", true)
+        if not isSecret(myName) and not isSecret(myFullName) and type(myName) == "string"
+            and (arg2 == myName or arg2 == myFullName or arg2:match("^[^-]+") == myName) then
+            for _, attempt in pairs(attempts) do
+                if attempt.text == arg1 then attempt.confirmed = true end
+            end
+        end
     elseif event == "PLAYER_LOGIN" then
         local _, class = UnitClass("player")
         isDruid = class == "DRUID"
@@ -220,7 +296,8 @@ frame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3, arg4)
     elseif event == "UNIT_SPELLCAST_SENT" and isDruid and arg1 == "player" then
         -- SENT: player, target name, cast GUID, spell ID.
         if not isSecret(arg3) and type(arg3) == "string" and isMark(arg4) then
-            casts[arg3] = { player = findPlayer(arg2) }
+            local player = findPlayer(arg2)
+            casts[arg3] = { player = player, attempt = player and attempts[player.guid] }
         end
     elseif (event == "UNIT_SPELLCAST_SUCCEEDED" or event == "UNIT_SPELLCAST_FAILED"
         or event == "UNIT_SPELLCAST_INTERRUPTED") and arg1 == "player" then
@@ -230,7 +307,7 @@ frame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3, arg4)
             casts[arg2] = nil
             if cast and event == "UNIT_SPELLCAST_SUCCEEDED" and isMark(arg3) then
                 if cast.player then
-                    recordBlessing(cast.player)
+                    recordBlessing(cast.player, cast.attempt)
                 else
                     sayLocal("Не удалось определить игрока; благословение не записано.")
                 end
