@@ -2,7 +2,7 @@
 ## Title: My Blessing
 ## Notes: Знак дикой природы, счётчик игроков и благословения.
 ## Author: Codex
-## Version: 1.4.0
+## Version: 1.4.1
 ## SavedVariablesPerCharacter: WildBlessingDB
 WildBlessing.lua
 WildBlessingUI.lua

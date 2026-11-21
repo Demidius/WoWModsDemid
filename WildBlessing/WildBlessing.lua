@@ -52,6 +52,9 @@ local function createMacro()
     local body = "#showtooltip " .. name .. "\n/run WildBlessingAnnounce()\n/cast [@mouseover,help,nodead] " .. name
     if existing ~= 0 then
         local _, _, oldBody = GetMacroInfo(existing)
+        if type(oldBody) == "string" then
+            oldBody = oldBody:gsub("\r\n", "\n"):gsub("%s+$", "")
+        end
         if oldBody == legacyBody then
             local ok = pcall(EditMacro, existing, nil, nil, body)
             if ok then sayLocal("Макрос WildMark обновлён.") end
