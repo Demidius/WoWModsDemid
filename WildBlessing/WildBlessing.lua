@@ -2,7 +2,7 @@ local addonName = ...
 local frame = CreateFrame("Frame")
 local pending = {}
 local markName
-local playerGUID
+local casts = {}
 local isDruid = false
 
 local oldBlessings = {
@@ -70,13 +70,61 @@ local function openNext()
     end
 end
 
-local function recordBlessing(guid, name)
-    local number = WildBlessingDB.players[guid]
-    if not number then
-        WildBlessingDB.count = WildBlessingDB.count + 1
-        number = WildBlessingDB.count
-        WildBlessingDB.players[guid] = number
+local function isSecret(value)
+    return issecretvalue and issecretvalue(value) or false
+end
+
+local function findPlayer(targetName)
+    if isSecret(targetName) or type(targetName) ~= "string" or targetName == "" then return end
+    local candidates = { "mouseover", "target", "focus", "player" }
+    for i = 1, 4 do candidates[#candidates + 1] = "party" .. i end
+    for i = 1, 40 do candidates[#candidates + 1] = "raid" .. i end
+    local found
+    for _, unit in ipairs(candidates) do
+        local isPlayer = UnitIsPlayer(unit)
+        if not isSecret(isPlayer) and isPlayer then
+            local name = GetUnitName(unit, true)
+            local short = UnitName(unit)
+            local guid = UnitGUID(unit)
+            if not isSecret(name) and not isSecret(short) and not isSecret(guid)
+                and type(name) == "string" and type(short) == "string"
+                and type(guid) == "string" and guid:match("^Player%-")
+                and (targetName == name or targetName == short) then
+                if found and found.guid ~= guid then return end
+                found = { name = name, guid = guid }
+            end
+        end
     end
+    return found
+end
+
+local function isMark(spellID)
+    if isSecret(spellID) or type(spellID) ~= "number" then return false end
+    local name
+    if C_Spell and C_Spell.GetSpellName then
+        name = C_Spell.GetSpellName(spellID)
+    elseif GetSpellInfo then
+        name = GetSpellInfo(spellID)
+    end
+    if not markName then markName = getMarkName() end
+    return not isSecret(name) and not isSecret(markName) and name ~= nil and name == markName
+end
+
+local function recordBlessing(player)
+    local name, guid = player.name, player.guid
+    local key = string.lower(name)
+    if WildBlessingDB.names[key] then return end
+    local number = WildBlessingDB.players[guid]
+    if number then
+        -- Migrate identities recorded by the previous GUID-only version silently.
+        WildBlessingDB.names[key] = { name = name, guid = guid, number = number }
+        return
+    end
+    WildBlessingDB.count = WildBlessingDB.count + 1
+    number = WildBlessingDB.count
+    WildBlessingDB.players[guid] = number
+    WildBlessingDB.names[key] = { name = name, guid = guid, number = number }
+    if WildBlessingRefreshSettings then WildBlessingRefreshSettings() end
     local blessings = WildBlessingDB.blessings
     local template = blessings[((WildBlessingDB.messages or 0) % #blessings) + 1]
     WildBlessingDB.messages = (WildBlessingDB.messages or 0) + 1
@@ -115,6 +163,12 @@ SlashCmdList.WILDBLESSING = function(message)
             table.remove(WildBlessingDB.blessings, index)
             sayLocal("Благословение удалено.")
         end
+    elseif command == "players" then
+        local names = {}
+        for _, entry in pairs(WildBlessingDB.names) do names[#names + 1] = entry end
+        table.sort(names, function(a, b) return a.number < b.number end)
+        if #names == 0 then sayLocal("Список игроков пока пуст.") end
+        for _, entry in ipairs(names) do sayLocal("#" .. entry.number .. ": " .. entry.name) end
     elseif command == "macro" then
         createMacro()
     elseif command == "next" then
@@ -127,17 +181,21 @@ SlashCmdList.WILDBLESSING = function(message)
         sayLocal("Уникальных игроков: " .. (WildBlessingDB and WildBlessingDB.count or 0) .. ".")
         sayLocal("/wild settings — настройки; /wild macro — создать макрос; /wild next — следующее сообщение.")
         sayLocal("/wild list — список; /wild add ТЕКСТ — добавить; /wild remove НОМЕР — удалить.")
-        sayLocal("В новом тексте используйте {имя} и {номер}.")
+        sayLocal("/wild players — имена игроков. В новом тексте используйте {имя} и {номер}.")
     end
 end
 
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-frame:SetScript("OnEvent", function(_, event, arg1)
+frame:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
+frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+frame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
+frame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "player")
+frame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3, arg4)
     if event == "ADDON_LOADED" and arg1 == addonName then
         WildBlessingDB = WildBlessingDB or {}
         WildBlessingDB.players = WildBlessingDB.players or {}
+        WildBlessingDB.names = WildBlessingDB.names or {}
         WildBlessingDB.count = WildBlessingDB.count or 0
         if not WildBlessingDB.blessings or #WildBlessingDB.blessings == 0 then
             WildBlessingDB.blessings = {}
@@ -157,15 +215,26 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "PLAYER_LOGIN" then
         local _, class = UnitClass("player")
         isDruid = class == "DRUID"
-        playerGUID = UnitGUID("player")
         markName = getMarkName()
         createMacro()
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" and isDruid and WildBlessingDB then
-        local _, subevent, _, sourceGUID, _, _, _, destGUID, destName, _, _, _, spellName = CombatLogGetCurrentEventInfo()
-        if (subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_AURA_REFRESH")
-            and sourceGUID == playerGUID and destGUID and destGUID:match("^Player%-")
-            and destName and markName and spellName == markName then
-            recordBlessing(destGUID, destName)
+    elseif event == "UNIT_SPELLCAST_SENT" and isDruid and arg1 == "player" then
+        -- SENT: player, target name, cast GUID, spell ID.
+        if not isSecret(arg3) and type(arg3) == "string" and isMark(arg4) then
+            casts[arg3] = { player = findPlayer(arg2) }
+        end
+    elseif (event == "UNIT_SPELLCAST_SUCCEEDED" or event == "UNIT_SPELLCAST_FAILED"
+        or event == "UNIT_SPELLCAST_INTERRUPTED") and arg1 == "player" then
+        -- SUCCEEDED/FAILED: player, cast GUID, spell ID.
+        if not isSecret(arg2) and type(arg2) == "string" then
+            local cast = casts[arg2]
+            casts[arg2] = nil
+            if cast and event == "UNIT_SPELLCAST_SUCCEEDED" and isMark(arg3) then
+                if cast.player then
+                    recordBlessing(cast.player)
+                else
+                    sayLocal("Не удалось определить игрока; благословение не записано.")
+                end
+            end
         end
     end
 end)

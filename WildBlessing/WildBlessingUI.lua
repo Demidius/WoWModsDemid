@@ -148,6 +148,10 @@ function WildBlessingToggleSettings()
     settings:Show()
 end
 
+function WildBlessingRefreshSettings()
+    if settings and settings:IsShown() and refreshSettings then refreshSettings() end
+end
+
 local minimapButton = CreateFrame("Button", "WildBlessingMinimapButton", Minimap)
 minimapButton:SetSize(32, 32)
 minimapButton:SetFrameStrata("MEDIUM")
