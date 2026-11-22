@@ -6,13 +6,14 @@
 - **AuctionPawn** - помощник для аукциона.
 - **VendorOrAuction** - помощь с предметами в сумках и выбором способа продажи.
 - **BuffReminder** - напоминания об отсутствующих усилениях.
+- **PalMacros** - макросы на все заклинания паладина, умная кнопка благословений, фразы и журнал игроков.
 
 Подробности и команды находятся в README каждого аддона.
 
 ## Установка
 
 1. На странице репозитория выбери **Code -> Download ZIP** и распакуй архив.
-2. Скопируй папки `BearManaAlert`, `AuctionPawn`, `VendorOrAuction` и `BuffReminder` в папку `World of Warcraft\_forever_\Interface\AddOns`.
+2. Скопируй папки `BearManaAlert`, `AuctionPawn`, `VendorOrAuction`, `BuffReminder` и `PalMacros` в папку `World of Warcraft\_forever_\Interface\AddOns`.
 3. Внутри каждой папки аддона должен непосредственно лежать файл с расширением `.toc`.
 4. Перезапусти игру или выполни `/reload` и проверь список аддонов.
 

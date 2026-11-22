@@ -1,0 +1,13 @@
+## Interface: 16001
+## Title: Pal Macros
+## Notes: Макросы на все заклинания паладина: по мышке, автопоиск цели, умное благословение по классу и дворфийские фразы в чат.
+## Author: Демид
+## Version: 1.2.1
+## IconTexture: Interface\Icons\Spell_Holy_FistOfJustice
+## AddonCompartmentFunc: PalMacros_OnCompartmentClick
+## SavedVariables: PalMacrosDB
+## SavedVariablesPerCharacter: PalMacrosCharDB
+
+Data.lua
+Core.lua
+UI.lua
