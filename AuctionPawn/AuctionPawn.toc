@@ -2,7 +2,7 @@
 ## Title: My Auction Pawn Upgrades
 ## Notes: Pawn upgrade comparisons for auction browse results.
 ## Author: Codex
-## Version: 1.6.1
+## Version: 1.7.0
 ## Dependencies: Pawn
 AuctionPawn.lua
 

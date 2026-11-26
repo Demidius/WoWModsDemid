@@ -6,9 +6,40 @@ local generation = 0
 local PAGE_SIZE = 12
 local selectedScale
 local minPrice, maxPrice, priceError
-local selectedStat, statMinimum, statError
+local selectedStat, statMinimum, statError = "PAWN_DIFFERENCE", nil, nil
 local selectedPerson, inspected, inspectMessage, inspectSerial = nil, nil, nil, 0
-local personButton
+local personButton, statButton
+local function selectPlayerScale()
+    selectedScale = nil
+    if not PawnCommon or not PawnCommon.Scales or not PawnIsScaleVisible then return end
+    local _, _, classID = UnitClass("player")
+    local spec, fromTalentTree
+    if GetPrimaryTalentTree then
+        local ok, tree = pcall(GetPrimaryTalentTree)
+        if ok and type(tree) == "number" and tree > 0 then spec, fromTalentTree = tree, true end
+    end
+    if not spec and GetSpecialization then
+        local ok, current = pcall(GetSpecialization)
+        if ok and type(current) == "number" and current > 0 then spec = current end
+    end
+    -- Classic druids have three talent trees, while Pawn numbers Restoration fourth.
+    if fromTalentTree and classID == 11 and spec == 3 then spec = 4 end
+    local candidates = {}
+    for name, scale in pairs(PawnCommon.Scales) do
+        if scale.ClassID == classID and spec and scale.SpecID == spec and PawnIsScaleVisible(name) then
+            candidates[#candidates + 1] = name
+        end
+    end
+    table.sort(candidates)
+    for _, name in ipairs(candidates) do
+        if name == PawnUICurrentScale then selectedScale = name; break end
+    end
+    selectedScale = selectedScale or candidates[1]
+    if scaleButton then
+        local scale = selectedScale and PawnCommon.Scales[selectedScale]
+        scaleButton:SetText(scale and (scale.LocalizedName or selectedScale) or "Все шкалы")
+    end
+end
 local statChoices = {
     { key = "RESISTANCE0_NAME", label = "Броня" },
     { key = "ITEM_MOD_STRENGTH_SHORT", label = "Сила" },
@@ -323,6 +354,7 @@ local function selectPerson(unit, name)
     inspected = nil
     if not name then
         selectedPerson = nil; inspectMessage = nil
+        selectPlayerScale()
         personButton:SetText("Для себя")
         scan()
         return
@@ -418,6 +450,7 @@ local function createPanel()
     end)
     scaleButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     scaleButton:SetSize(190, 22); scaleButton:SetPoint("TOPLEFT", 20, -69); scaleButton:SetText("Все шкалы")
+    selectPlayerScale()
     scaleButton:SetScript("OnClick", function(self)
         MenuUtil.CreateContextMenu(self, function(_, menu)
             menu:CreateTitle("Шкала Pawn")
@@ -473,8 +506,8 @@ local function createPanel()
     maxPriceBox:SetScript("OnTextChanged", updatePrice)
     local statLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     statLabel:SetPoint("TOPLEFT", 20, -115); statLabel:SetText("Столбец:")
-    local statButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    statButton:SetSize(155, 22); statButton:SetPoint("TOPLEFT", 83, -109); statButton:SetText("Улучшение Pawn")
+    statButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    statButton:SetSize(155, 22); statButton:SetPoint("TOPLEFT", 83, -109); statButton:SetText("Изменение оценки")
     statButton:SetScript("OnClick", function(self)
         MenuUtil.CreateContextMenu(self, function(_, menu)
             menu:CreateTitle("Показатель столбца")
@@ -504,7 +537,7 @@ local function createPanel()
     local valueLegend = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     valueLegend:SetPoint("TOPRIGHT", -20, -115); valueLegend:SetText("★ Выгоднее по цене")
     statMinBox = priceBox(327)
-    statMinBox:ClearAllPoints(); statMinBox:SetPoint("TOPLEFT", 327, -110); statMinBox:Disable()
+    statMinBox:ClearAllPoints(); statMinBox:SetPoint("TOPLEFT", 327, -110); statMinBox:Enable()
     statMinBox:SetScript("OnTextChanged", function(self)
         local value = self:GetText():gsub("%s+", ""):gsub(",", ".")
         statMinimum = value ~= "" and tonumber(value) or nil
@@ -517,7 +550,7 @@ local function createPanel()
     end
     heading("Предмет", 20, 205); heading("Шкала", 358, 105); heading("Цена", 470, 130)
     header = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    header:SetSize(118, 20); header:SetPoint("TOPLEFT", 230, -151); header:SetText("Улучшение")
+    header:SetSize(118, 20); header:SetPoint("TOPLEFT", 230, -151); header:SetText("Разница")
     header:SetScript("OnClick", function() ascending = not ascending; showRows() end)
     for i = 1, PAGE_SIZE do
         local row = CreateFrame("Button", nil, panel)
@@ -547,15 +580,50 @@ local function createPanel()
     open:SetSize(145, 22); open:SetPoint("BOTTOMRIGHT", AuctionHouseFrame, "BOTTOMRIGHT", -25, 6); open:SetText("Улучшения Pawn")
     open:SetScript("OnClick", function() if panel:IsShown() then panel:Hide() else panel:Show(); scan() end end)
     browse:HookScript("OnHide", function() panel:Hide(); generation = generation + 1 end)
+    browse:HookScript("OnShow", function()
+        if AuctionHouseFrame and AuctionHouseFrame:IsShown() then panel:Show(); scan() end
+    end)
 end
 
+local auctionSession = 0
 addon:RegisterEvent("AUCTION_HOUSE_SHOW")
+addon:RegisterEvent("AUCTION_HOUSE_CLOSED")
 addon:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 addon:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 addon:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 addon:RegisterEvent("INSPECT_READY")
 addon:SetScript("OnEvent", function(_, event, arg)
-    if event == "AUCTION_HOUSE_SHOW" then createPanel()
+    if event == "AUCTION_HOUSE_SHOW" then
+        auctionSession = auctionSession + 1
+        local session = auctionSession
+        local initialized = false
+        local function openPanel()
+            if session ~= auctionSession or not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then return end
+            createPanel()
+            if panel and not initialized then
+                initialized = true
+                selectedPerson, inspected, inspectMessage = nil, nil, nil
+                inspectSerial = inspectSerial + 1
+                personButton:SetText("Для себя")
+                selectedStat, statMinimum, statError = "PAWN_DIFFERENCE", nil, nil
+                ascending, page = false, 1
+                statButton:SetText("Изменение оценки")
+                header:SetText("Разница")
+                statMinBox:SetText("")
+                statMinBox:Enable()
+                selectPlayerScale()
+            end
+            if panel and browse and browse:IsShown() then
+                if not panel:IsShown() then panel:Show(); scan() end
+            end
+        end
+        openPanel()
+        C_Timer.After(0.25, openPanel)
+        C_Timer.After(1, openPanel)
+    elseif event == "AUCTION_HOUSE_CLOSED" then
+        auctionSession = auctionSession + 1
+        generation = generation + 1
+        if panel then panel:Hide() end
     elseif event == "INSPECT_READY" then
         if selectedPerson and selectedPerson.guid and selectedPerson.guid == arg and selectedPerson.unit and UnitGUID(selectedPerson.unit) == arg then
             local _, _, classID = UnitClass(selectedPerson.unit)
@@ -589,7 +657,10 @@ addon:SetScript("OnEvent", function(_, event, arg)
             inspectMessage = nil
             scan()
         end
-    elseif panel and panel:IsShown() then
+    else
+        if not panel and AuctionHouseFrame and AuctionHouseFrame:IsShown() then createPanel() end
+        if not panel or not browse or not browse:IsShown() then return end
+        if not panel:IsShown() then panel:Show() end
         generation = generation + 1
         C_Timer.After(0.1, function() if panel:IsShown() then scan() end end)
     end

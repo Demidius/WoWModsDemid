@@ -10,6 +10,26 @@ local bar = CreateFrame("StatusBar", nil, frame)
 bar:SetPoint("TOPLEFT", 1, -1)
 bar:SetPoint("BOTTOMRIGHT", -1, 1)
 bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+local pixelBackground = bar:CreateTexture(nil, "BACKGROUND")
+pixelBackground:SetAllPoints(bar)
+pixelBackground:SetColorTexture(0.015, 0.015, 0.08, 0.95)
+pixelBackground:Hide()
+local pixelFrame = bar:CreateTexture(nil, "OVERLAY", nil, 1)
+pixelFrame:SetTexture("Interface\\AddOns\\BearManaAlert\\PixelManaFrame.tga")
+pixelFrame:SetAllPoints(frame)
+pixelFrame:Hide()
+local arcadeFrame = bar:CreateTexture(nil, "OVERLAY", nil, 1)
+arcadeFrame:SetTexture("Interface\\AddOns\\BearManaAlert\\ArcadeManaFrame.tga")
+arcadeFrame:SetAllPoints(frame)
+arcadeFrame:Hide()
+local pixelDividers = {}
+for i = 1, 9 do
+    local line = bar:CreateTexture(nil, "OVERLAY", nil, 0)
+    line:SetColorTexture(0.01, 0.01, 0.08, 0.85)
+    line:SetHeight(2)
+    line:Hide()
+    pixelDividers[i] = line
+end
 local marker = bar:CreateTexture(nil, "OVERLAY")
 marker:SetColorTexture(1, 0.85, 0.2, 1)
 marker:SetWidth(2)
@@ -26,8 +46,9 @@ local threshold2Marker = bar:CreateTexture(nil, "OVERLAY", nil, 3)
 threshold2Marker:SetColorTexture(0.2, 1, 1, 1)
 threshold2Marker:SetWidth(2)
 local function createAlert()
-    local holder = CreateFrame("Frame", nil, frame)
+    local holder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     holder:SetSize(32, 36)
+    holder:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 2})
     local alert = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
     alert:SetPoint("CENTER")
     alert:SetText("!")
@@ -37,7 +58,7 @@ local function createAlert()
     holder:Hide()
     return holder, alert
 end
-local db, isDruid, options, signOptions, dragging, lastLow, lastLow2
+local db, isDruid, options, signOptions, dragging, lastLow, lastLow2, appliedBarStyle
 local thresholdAlert, thresholdAlertText = createAlert()
 local threshold2Alert, threshold2AlertText = createAlert()
 frame:SetScript("OnUpdate", function()
@@ -122,19 +143,71 @@ local function refresh(silent, enteringCombat)
     if not isDruid or (not preview and (not db.show or (db.combat and not UnitAffectingCombat("player")))) then frame:Hide(); lastLow = nil; lastLow2 = nil; return end
     frame:Show()
     frame:EnableMouse(db.unlocked or IsShiftKeyDown() or dragging)
-    frame:SetSize(db.width, db.height)
+    local vertical = db.style == "pixel"
+    local arcade = db.style == "arcade"
+    local decorated = vertical or arcade
+    if appliedBarStyle ~= db.style then
+        bar:SetStatusBarTexture(arcade and "Interface\\AddOns\\BearManaAlert\\ArcadeManaFill.tga" or "Interface\\TargetingFrame\\UI-StatusBar")
+        appliedBarStyle = db.style
+    end
+    local length, thickness = db.width * db.scale / 100, db.height * db.scale / 100
+    frame:SetSize(vertical and thickness * 2.5 or length, vertical and length or (arcade and thickness * 2.5 or thickness))
+    frame:SetBackdropColor(0.04, 0.04, 0.06, decorated and 0 or 0.85)
+    frame:SetBackdropBorderColor(0, 0, 0, decorated and 0 or 1)
+    bar:ClearAllPoints()
+    if vertical then
+        bar:SetPoint("TOPLEFT", frame, "TOPLEFT", thickness * 2.5 * 28 / 64, -length * 7 / 256)
+        bar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -thickness * 2.5 * 28 / 64, length * 7 / 256)
+    elseif arcade then
+        bar:SetPoint("TOPLEFT", frame, "TOPLEFT", length * 72 / 256, -thickness * 2.5 * 16 / 64)
+        bar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -length * 35 / 256, thickness * 2.5 * 19 / 64)
+    else
+        bar:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+        bar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+    end
+    bar:SetOrientation(vertical and "VERTICAL" or "HORIZONTAL")
+    pixelFrame:SetShown(vertical)
+    arcadeFrame:SetShown(arcade)
+    pixelBackground:SetShown(decorated)
+    local barLength = vertical and length * 242 / 256 or (arcade and length * 149 / 256 or length - 2)
+    for i, line in ipairs(pixelDividers) do
+        line:ClearAllPoints()
+        if vertical then
+            local y = barLength * i / 10
+            line:SetHeight(2)
+            line:SetPoint("LEFT", bar, "BOTTOMLEFT", 0, y)
+            line:SetPoint("RIGHT", bar, "BOTTOMRIGHT", 0, y)
+        end
+        line:SetShown(vertical)
+    end
     local mana, maximum = UnitPower("player", 0), UnitPowerMax("player", 0)
-    local thresholdX = math.max(2.5, math.min(db.width - 4.5, (db.width - 2) * db.threshold / 100))
+    local thresholdX = math.max(2.5, math.min(barLength - 2.5, barLength * db.threshold / 100))
     for _, line in ipairs({thresholdBorder, thresholdMarker}) do
         line:ClearAllPoints()
-        line:SetPoint("TOP", bar, "TOPLEFT", thresholdX, 0)
-        line:SetPoint("BOTTOM", bar, "BOTTOMLEFT", thresholdX, 0)
+        if vertical then
+            line:SetHeight(line == thresholdBorder and 5 or 2)
+            local y = barLength * db.threshold / 100
+            line:SetPoint("LEFT", bar, "BOTTOMLEFT", 0, y)
+            line:SetPoint("RIGHT", bar, "BOTTOMRIGHT", 0, y)
+        else
+            line:SetWidth(line == thresholdBorder and 5 or 2)
+            line:SetPoint("TOP", bar, "TOPLEFT", thresholdX, 0)
+            line:SetPoint("BOTTOM", bar, "BOTTOMLEFT", thresholdX, 0)
+        end
     end
-    local threshold2X = math.max(2.5, math.min(db.width - 4.5, (db.width - 2) * db.threshold2 / 100))
+    local threshold2X = math.max(2.5, math.min(barLength - 2.5, barLength * db.threshold2 / 100))
     for _, line in ipairs({threshold2Border, threshold2Marker}) do
         line:ClearAllPoints()
-        line:SetPoint("TOP", bar, "TOPLEFT", threshold2X, 0)
-        line:SetPoint("BOTTOM", bar, "BOTTOMLEFT", threshold2X, 0)
+        if vertical then
+            line:SetHeight(line == threshold2Border and 5 or 2)
+            local y = barLength * db.threshold2 / 100
+            line:SetPoint("LEFT", bar, "BOTTOMLEFT", 0, y)
+            line:SetPoint("RIGHT", bar, "BOTTOMRIGHT", 0, y)
+        else
+            line:SetWidth(line == threshold2Border and 5 or 2)
+            line:SetPoint("TOP", bar, "TOPLEFT", threshold2X, 0)
+            line:SetPoint("BOTTOM", bar, "BOTTOMLEFT", threshold2X, 0)
+        end
         line:SetShown(db.threshold2Enabled)
     end
     local fontPath, fontSize, fontFlags = GameFontNormalHuge:GetFont()
@@ -146,18 +219,40 @@ local function refresh(silent, enteringCombat)
     threshold2AlertText:SetText(signSymbols[db.signSymbol2])
     thresholdAlertText:SetTextColor(unpack(db.signColor1))
     threshold2AlertText:SetTextColor(unpack(db.signColor2))
+    for _, holder in ipairs({thresholdAlert, threshold2Alert}) do
+        if vertical then
+            holder:SetBackdropColor(0.07, 0.03, 0.01, 0.9)
+            holder:SetBackdropBorderColor(1, 0.7, 0.15, 1)
+        elseif arcade then
+            holder:SetBackdropColor(0.08, 0.03, 0.18, 0.95)
+            holder:SetBackdropBorderColor(1, 0.15, 0.25, 1)
+        else
+            holder:SetBackdropColor(0, 0, 0, 0)
+            holder:SetBackdropBorderColor(0, 0, 0, 0)
+        end
+    end
     thresholdAlert:ClearAllPoints()
-    thresholdAlert:SetPoint("BOTTOM", bar, "TOPLEFT", thresholdX, db.signOffset1)
+    if vertical then thresholdAlert:SetPoint("LEFT", bar, "BOTTOMRIGHT", db.signOffset1, barLength * db.threshold / 100)
+    else thresholdAlert:SetPoint("BOTTOM", bar, "TOPLEFT", thresholdX, db.signOffset1) end
     threshold2Alert:ClearAllPoints()
-    threshold2Alert:SetPoint("BOTTOM", bar, "TOPLEFT", threshold2X, db.signOffset2)
+    if vertical then threshold2Alert:SetPoint("LEFT", bar, "BOTTOMRIGHT", db.signOffset2, barLength * db.threshold2 / 100)
+    else threshold2Alert:SetPoint("BOTTOM", bar, "TOPLEFT", threshold2X, db.signOffset2) end
     -- Bear cost can still be displayed when only current mana is restricted.
     if not (issecretvalue and issecretvalue(maximum)) and maximum and maximum > 0 then
         local bear = cost()
         if bear and bear <= maximum then
-            local bearX = (db.width - 2) * bear / maximum
+            local bearX = barLength * bear / maximum
             marker:ClearAllPoints()
-            marker:SetPoint("TOP", bar, "TOPLEFT", bearX, 0)
-            marker:SetPoint("BOTTOM", bar, "BOTTOMLEFT", bearX, 0)
+            if vertical then
+                marker:SetHeight(2)
+                local y = barLength * bear / maximum
+                marker:SetPoint("LEFT", bar, "BOTTOMLEFT", 0, y)
+                marker:SetPoint("RIGHT", bar, "BOTTOMRIGHT", 0, y)
+            else
+                marker:SetWidth(2)
+                marker:SetPoint("TOP", bar, "TOPLEFT", bearX, 0)
+                marker:SetPoint("BOTTOM", bar, "BOTTOMLEFT", bearX, 0)
+            end
             marker:Show()
         else marker:Hide() end
     else marker:Hide() end
@@ -233,11 +328,21 @@ events:SetScript("OnEvent", function(_, event, arg)
         if arg ~= "BearManaAlert" then return end
         BearManaAlertDB.bar = type(BearManaAlertDB.bar) == "table" and BearManaAlertDB.bar or {}
         db = BearManaAlertDB.bar
+        if db.style ~= "pixel" and db.style ~= "arcade" then db.style = "classic" end
         if db.show == nil then db.show = true end
         if db.combat == nil then db.combat = false end
         if db.unlocked == nil then db.unlocked = false end
         db.width = math.max(100, math.min(600, tonumber(db.width) or 260))
         db.height = math.max(10, math.min(60, tonumber(db.height) or 24))
+        db.styles = type(db.styles) == "table" and db.styles or {}
+        for _, name in ipairs({"classic", "pixel", "arcade"}) do
+            local saved = type(db.styles[name]) == "table" and db.styles[name] or {}
+            saved.width = math.max(100, math.min(600, tonumber(saved.width) or db.width))
+            saved.height = math.max(10, math.min(60, tonumber(saved.height) or db.height))
+            saved.scale = math.max(50, math.min(200, tonumber(saved.scale) or 100))
+            db.styles[name] = saved
+        end
+        db.width, db.height, db.scale = db.styles[db.style].width, db.styles[db.style].height, db.styles[db.style].scale
         db.x, db.y = tonumber(db.x) or 0, tonumber(db.y) or -150
         db.color = math.max(1, math.min(#colors, math.floor(tonumber(db.color) or 1)))
         local oldColor = colors[db.color]
@@ -446,6 +551,54 @@ function BearManaAlertOpenBarSettings()
     local show = checkbox(-40, "Показывать полоску", "show")
     local combat = checkbox(-72, "Только в бою", "combat")
     local unlock = checkbox(-104, "Разблокировать и перетащить", "unlocked")
+    local width, height, widthText, heightText, scaleSlider, scaleLabel
+    local updatingDimensions = false
+    local style = CreateFrame("Button", nil, options, "UIPanelButtonTemplate")
+    style:SetSize(170, 25)
+    style:SetPoint("TOPRIGHT", -22, -43)
+    local function updateStyleLabel()
+        local labels = {classic = "Стиль: обычный", pixel = "Стиль: золото", arcade = "Стиль: аркада"}
+        style:SetText(labels[db.style])
+    end
+    style:SetScript("OnClick", function()
+        local order = {classic = "pixel", pixel = "arcade", arcade = "classic"}
+        db.style = order[db.style]
+        local saved = db.styles[db.style]
+        db.width, db.height, db.scale = saved.width, saved.height, saved.scale
+        updatingDimensions = true
+        width:SetValue(db.width); height:SetValue(db.height); scaleSlider:SetValue(db.scale)
+        updatingDimensions = false
+        widthText:SetText((db.style == "pixel" and "Длина: " or "Ширина: ") .. db.width)
+        heightText:SetText((db.style == "pixel" and "Толщина: " or "Высота: ") .. db.height)
+        scaleLabel:SetText("Размер: " .. db.scale .. "%")
+        updateStyleLabel()
+        refresh(true)
+    end)
+    style:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Стиль шкалы")
+        GameTooltip:AddLine("Нажмите, чтобы переключить стиль. Размеры каждого стиля сохраняются отдельно.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    style:SetScript("OnLeave", GameTooltip_Hide)
+    scaleLabel = options:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    scaleLabel:SetPoint("TOPRIGHT", -38, -80)
+    scaleSlider = CreateFrame("Slider", "BearManaStyleScaleSlider", options, "OptionsSliderTemplate")
+    scaleSlider:SetPoint("TOPRIGHT", -32, -108)
+    scaleSlider:SetWidth(145)
+    scaleSlider:SetMinMaxValues(50, 200)
+    scaleSlider:SetValueStep(1)
+    scaleSlider:SetObeyStepOnDrag(true)
+    BearManaStyleScaleSliderLow:SetText("50%")
+    BearManaStyleScaleSliderHigh:SetText("200%")
+    BearManaStyleScaleSliderText:SetText("")
+    scaleSlider:SetScript("OnValueChanged", function(_, value)
+        if updatingDimensions or not db then return end
+        db.scale = math.floor(value + 0.5)
+        db.styles[db.style].scale = db.scale
+        scaleLabel:SetText("Размер: " .. db.scale .. "%")
+        refresh(true)
+    end)
     local function slider(name, title, y, min, max, key)
         local heading = options:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         heading:SetPoint("TOPLEFT", 29, y)
@@ -459,14 +612,19 @@ function BearManaAlertOpenBarSettings()
         _G[name .. "High"]:SetText(tostring(max))
         _G[name .. "Text"]:SetText("")
         s:SetScript("OnValueChanged", function(_, v)
+            if updatingDimensions then return end
             db[key] = math.floor(v + 0.5)
-            heading:SetText(title .. ": " .. db[key])
+            if key == "width" or key == "height" then db.styles[db.style][key] = db[key] end
+            local label = title
+            if db.style == "pixel" and key == "width" then label = "Длина" end
+            if db.style == "pixel" and key == "height" then label = "Толщина" end
+            heading:SetText(label .. ": " .. db[key])
             refresh(true)
         end)
         return s, heading
     end
-    local width, widthText = slider("BearManaBarWidthSlider", "Ширина", -150, 100, 600, "width")
-    local height, heightText = slider("BearManaBarHeightSlider", "Высота", -215, 10, 60, "height")
+    width, widthText = slider("BearManaBarWidthSlider", "Ширина", -150, 100, 600, "width")
+    height, heightText = slider("BearManaBarHeightSlider", "Высота", -215, 10, 60, "height")
     local threshold, thresholdText = slider("BearManaBarThresholdSlider", "Порог 1 (%)", -280, 0, 100, "threshold")
     local thresholdSound = checkbox(-334, "Звук для порога 1", "thresholdSound")
     local function colorButton(label, key, x, y)
@@ -532,10 +690,16 @@ function BearManaAlertOpenBarSettings()
     close:SetText("Закрыть")
     close:SetScript("OnClick", function() options:Hide() end)
     options:SetScript("OnShow", function()
+        updateStyleLabel()
         show:SetChecked(db.show); combat:SetChecked(db.combat); unlock:SetChecked(db.unlocked)
         thresholdSound:SetChecked(db.thresholdSound); threshold2Sound:SetChecked(db.threshold2Sound); threshold2Enabled:SetChecked(db.threshold2Enabled)
-        width:SetValue(db.width); height:SetValue(db.height); threshold:SetValue(db.threshold); threshold2:SetValue(db.threshold2)
-        widthText:SetText("Ширина: " .. db.width); heightText:SetText("Высота: " .. db.height)
+        updatingDimensions = true
+        width:SetValue(db.width); height:SetValue(db.height); scaleSlider:SetValue(db.scale)
+        updatingDimensions = false
+        threshold:SetValue(db.threshold); threshold2:SetValue(db.threshold2)
+        widthText:SetText((db.style == "pixel" and "Длина: " or "Ширина: ") .. db.width)
+        heightText:SetText((db.style == "pixel" and "Толщина: " or "Высота: ") .. db.height)
+        scaleLabel:SetText("Размер: " .. db.scale .. "%")
         thresholdText:SetText("Порог 1 (%): " .. db.threshold)
         threshold2Text:SetText("Порог 2 (%): " .. db.threshold2)
         mode:SetText(modes[db.text])
